@@ -15,7 +15,8 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget, QHBoxLayout, QWidget,
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel)
 
-from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,SimilarityWidget
+from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget
+from matplotlib_plotting import SimilarityWidget
 
 from views import GraphWidget, TableWidget, NetworkGraphicsView
 from models import Graph
@@ -190,8 +191,7 @@ class MainWindow(QMainWindow):
         selectedInd = selected[0].row()
         wavfile = self.tokenTable.model().data(selected[0])
         token_path = self.settings.value('path','')
-        self.specgramWindow.plot(os.path.join(token_path,wavfile))
-        self.specgramWindow.resize(4,3)
+        self.specgramWindow.plot_specgram(os.path.join(token_path,wavfile))
 
 
 
@@ -208,9 +208,8 @@ class MainWindow(QMainWindow):
         selectedInd = selected[0].row()
         for n in self.graph.g.nodes_iter(data=True):
             if n[0] == selectedInd:
-                self.envelopeWindow.plot(n[1]['acoustics']['envelopes'])
+                self.envelopeWindow.plot_envelopes(n[1]['acoustics']['envelopes'])
                 break
-        self.envelopeWindow.resize(4,3)
 
     def similarity(self):
         selected = self.tokenTable.selectionModel().selectedRows()

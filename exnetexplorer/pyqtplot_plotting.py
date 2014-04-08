@@ -18,27 +18,11 @@ class Heatmap(pg.ImageItem):
         else:
             self.image = np.zeros((500, 500))
         pg.ImageItem.__init__(self, self.image)
-    def mouseHoverEvent(self, ev):
-        ev.acceptDrags(pg.Qt.QtCore.Qt.LeftButton)
+        
     def updateImage(self, image):
         self.image = image
         self.render()
         self.update()
-    def mouseDragEvent(self, ev):
-        if ev.button() != pg.Qt.QtCore.Qt.LeftButton:
-            ev.ignore()
-            return
-        else:
-            ev.accept()
-        heatmap = self.heatmap.copy()
-        p1 = ev.buttonDownPos()
-        p2 = ev.pos()
-        x1, x2 = sorted([p1.x(), p2.x()])
-        y1, y2 = sorted([p1.y(), p2.y()])
-        heatmap[x1:x2, y1:y2] += 1
-        self.setImage(heatmap, levels=[0,20])
-        if ev.isFinish():
-            self.heatmap = heatmap
 
 
 class SpecgramWidget(pg.PlotWidget):
@@ -50,22 +34,38 @@ class SpecgramWidget(pg.PlotWidget):
         self.setLabel('bottom', 'Time', units='s')
         
         
-    def plot(self,token_path):
+    def plot_specgram(self,token_path):
         newSr = 16000
         sr, sig = wavfile.read(token_path)
         t = len(sig)/sr
         numsamp = t * newSr
         proc = resample(sig,numsamp)
         
-        self.setXRange(0, len(proc)/newSr)
-        self.setYRange(0, newSr/2)
-        Pxx, freq, t = mlab.specgram(proc,Fs =newSr)
+        #self.setXRange(0, len(proc)/newSr)
+        #self.setYRange(0, newSr/2)
+        Pxx, freq, t = mlab.specgram(proc,Fs = newSr)
         Z = 10. * np.log10(Pxx)
-        self.heatmap.updateImage(Z)
+        #self.setLimits(xMin = 0, xMax = len(t),yMin=0,yMax=len(freq))
+        self.getAxis('left').setScale((newSr/2)/len(freq))
+        self.heatmap.updateImage(Z.T)
+        self.show()
+        self.update()
         
 
 class EnvelopeWidget(pg.PlotWidget):
-    pass
+    def __init__(self,parent=None):
+        pg.PlotWidget.__init__(self,parent=parent,name = 'Envelopes')
+        self.setLabel('left', 'Amplitude')
+        self.setLabel('bottom', 'Time', units='s')
+
+    def plot_envelopes(self,envs):
+        self.clear()
+        print(len(envs))
+        for e in envs:
+            self.plot(e)
+        self.getAxis('bottom').setScale(1/120)
+        self.show()
+        self.update()
     
 class SimilarityWidget(pg.PlotWidget):
     pass
