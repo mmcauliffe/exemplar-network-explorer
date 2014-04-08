@@ -1,6 +1,5 @@
 import math
 import sys
-sys.path.append('/home/michael/dev/Linguistics/linguistic-helper-functions')
 from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 

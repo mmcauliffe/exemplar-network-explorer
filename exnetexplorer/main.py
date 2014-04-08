@@ -1,7 +1,5 @@
 import math
 import sys
-sys.path.append('/home/michael/dev/Linguistics/linguistic-helper-functions')
-sys.path.append('/home/michael/dev/Linguistics/python-praat-scripts')
 from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 
@@ -17,7 +15,7 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget, QHBoxLayout, QWidget,
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel)
 
-from plotting import SpecgramWidget,EnvelopeWidget,SimilarityWidget
+from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,SimilarityWidget
 
 from views import GraphWidget, TableWidget, NetworkGraphicsView
 from models import Graph
@@ -114,6 +112,8 @@ class MainWindow(QMainWindow):
     def loadWordTokens(self):
         g = nx.Graph()
         token_path = self.settings.value('path','')
+        if not token_path:
+            return
         num_bands = self.settings.value('num_bands',8)
         erb = self.settings.value('erb',False)
         freq_lims = self.settings.value('freq_lims',(80,7800))

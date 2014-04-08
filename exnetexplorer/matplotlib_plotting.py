@@ -4,8 +4,6 @@ from PySide.QtCore import QSize
 
 import numpy as np
 
-import sys
-sys.path.append('/home/michael/dev/Linguistics/linguistic-helper-functions')
 from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 
@@ -208,7 +206,7 @@ class SimilarityWidget(MatplotlibWidget):
 
         for i in range(len(envsOne)):
             for j in range(len(envsTwo)):
-                sims[i,j] = envelope_match([envsOne[i]],[envsTwo[j]])
+                sims[i,j] = correlate_envelopes([envsOne[i]],[envsTwo[j]])
 
         mesh = self.axes.pcolormesh(sims,cmap=plt.cm.gist_heat)
         if self.colorbar is None:
