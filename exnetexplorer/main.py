@@ -1,53 +1,202 @@
 import math
 import sys
 from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
-
+from linghelper.distance.dtw import generate_distance_matrix, regularDTW
 
 import os
 import networkx as nx
 import numpy
 import scipy.signal
 
+import PySide
+
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
         Qt, QTime,QSettings,QSize,QPoint)
 from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainter,
         QPainterPath, QPen, QPolygonF, QRadialGradient, QApplication, QGraphicsItem, QGraphicsScene,
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget, QHBoxLayout, QWidget,
-        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel)
+        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel,
+        QPushButton,QLabel,QTabWidget,QGroupBox, QRadioButton,QVBoxLayout,QLineEdit,QFormLayout,
+        QCheckBox)
 
-from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget
+from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget
 from matplotlib_plotting import SimilarityWidget
 
 from views import GraphWidget, TableWidget, NetworkGraphicsView
 from models import Graph
 
 class PreferencesDialog(QDialog):
-    def __init__(self, parent=None):
-        from PySide import QtGui
-        from PySide import QtCore
+    def __init__(self, parent, settings):
         QDialog.__init__( self, parent )
 
-        firstButton = QtGui.QPushButton('a')
-        secondButton = QtGui.QPushButton('b')
-        thirdButton = QtGui.QPushButton('c')
-
+        self.settings = settings
 
         tabWidget = QTabWidget()
-        tabWidget.addWidget( firstButton )
-        tabWidget.addWidget( secondButton )
-        tabWidget.addWidget( thirdButton )
+        
+        specLayout = QFormLayout()
+        self.winLenEdit = QLineEdit()
+        self.winLenEdit.setText(str(settings.value('spectrogram/WinLen',0.025)))
+        specLayout.addRow(QLabel('Window length (s):'),self.winLenEdit)
+        self.timeStepEdit = QLineEdit()
+        self.timeStepEdit.setText(str(settings.value('spectrogram/TimeStep',0.01)))
+        specLayout.addRow(QLabel('Time step (s):'),self.timeStepEdit)
+        
+        
+        specWidget = QWidget()
+        specWidget.setLayout(specLayout)
+        
+        tabWidget.addTab(specWidget,'Spectrogram')
+        
+        #Network Tab
+        networkLayout = QFormLayout()
+        clusterBox = QGroupBox()
+        self.completeRadio = QRadioButton('Complete')
+        self.thresholdRadio = QRadioButton('Threshold')
+        self.incrementalRadio = QRadioButton('Incremental')
+        
+        clustAlgorithm = settings.value('network/clusterAlgorithm','complete')
+        
+        if clustAlgorithm == 'complete':
+            self.completeRadio.setChecked(True)
+        elif clustAlgorithm == 'threshold':
+            self.thresholdRadio.setChecked(True)
+        else:
+            self.incrementalRadio.setChecked(True)
+            
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.completeRadio)
+        hbox.addWidget(self.thresholdRadio)
+        hbox.addWidget(self.incrementalRadio)
+        clusterBox.setLayout(hbox)
+        
+        networkLayout.addRow(QLabel('Cluster algorithm:'),clusterBox)
+        
+        self.thresholdEdit = QLineEdit()
+        self.thresholdEdit.setText(str(settings.value('network/Threshold',0.9)))
+        networkLayout.addRow(QLabel('Similarity threshold:'),self.thresholdEdit)
+        
+        
+        networkWidget = QWidget()
+        networkWidget.setLayout(networkLayout)
+        
+        
+        tabWidget.addTab(networkWidget, 'Network')
+        
+        
+        #Similarity
+        simLayout = QVBoxLayout()
+        
+        envLayout = QFormLayout()
+        self.bandEdit = QLineEdit()
+        self.bandEdit.setText(str(settings.value('envelopes/NumBands',4)))
+        envLayout.addRow(QLabel('Number of bands:'),self.bandEdit)
+        self.minFreqEdit = QLineEdit()
+        self.minFreqEdit.setText(str(settings.value('envelopes/MinFreq',80)))
+        envLayout.addRow(QLabel('Minimum frequency (Hz):'),self.minFreqEdit)
+        self.maxFreqEdit = QLineEdit()
+        self.maxFreqEdit.setText(str(settings.value('envelopes/MaxFreq',7800)))
+        envLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxFreqEdit)
+        self.erbCheck = QCheckBox()
+        if self.settings.value('envelopes/ERB',False):
+            self.erbCheck.setChecked(True)
+        envLayout.addRow(QLabel('ERB:'),self.erbCheck)
+        
+        
+        matchAlgorithmBox = QGroupBox()
+        self.ccRadio = QRadioButton('Cross-correlation')
+        self.dtwRadio = QRadioButton('DTW')
+        
+        matchAlgorithm = settings.value('envelopes/MatchAlgorithm','xcorr')
+        
+        if matchAlgorithm == 'xcorr':
+            self.ccRadio.setChecked(True)
+        else:
+            self.dtwRadio.setChecked(True)
+            
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.ccRadio)
+        hbox.addWidget(self.dtwRadio)
+        matchAlgorithmBox.setLayout(hbox)
+        
+        envLayout.addRow(QLabel('Envelope matching algorithm:'),matchAlgorithmBox)
+        
+        envWidget = QGroupBox('Amplitude envelopes')
+        envWidget.setLayout(envLayout)
+        
+        simLayout.addWidget(envWidget)
+        
+        mfccLayout = QFormLayout()
+        self.numCCEdit = QLineEdit()
+        self.numCCEdit.setText(str(settings.value('mfcc/NumCC',12)))
+        mfccLayout.addRow(QLabel('Number of coefficents:'),self.numCCEdit)
+        self.maxMFCCFreqEdit = QLineEdit()
+        self.maxMFCCFreqEdit.setText(str(settings.value('mfcc/MaxFreq',7800)))
+        mfccLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxMFCCFreqEdit)
+        self.ampNormCheck = QCheckBox()
+        if settings.value('mfcc/NormAmp',True):
+            self.ampNormCheck.setChecked(True)
+        mfccLayout.addRow(QLabel('Amplitude normalization:'),self.ampNormCheck)
+        
+        mfccWidget = QGroupBox('MFCC DTW')
+        mfccWidget.setLayout(mfccLayout)
+        
+        simLayout.addWidget(mfccWidget)
+        
+        simWidget = QWidget()
+        simWidget.setLayout(simLayout)
+        
+        tabWidget.addTab(simWidget,'Similarity')
+        
 
-        pageComboBox = QtGui.QComboBox()
-        pageComboBox.setStyle
-        pageComboBox.addItems( ['Page 1', 'Page 2', 'Page 3'] )
-        QtCore.QObject.connect( pageComboBox, QtCore.SIGNAL( 'activated(int)'),
-                                stackedWidget,
-                                QtCore.SLOT('setCurrentIndex(int)') )
-
-        layout = QtGui.QHBoxLayout()
-        layout.addWidget( pageComboBox )
-        layout.addWidget( stackedWidget )
+        layout = QVBoxLayout()
+        layout.addWidget(tabWidget)
+        
+        #Accept cancel
+        self.acceptButton = QPushButton('Ok')
+        self.cancelButton = QPushButton('Cancel')
+        
+        self.acceptButton.clicked.connect(self.accept)
+        self.cancelButton.clicked.connect(self.reject)
+        
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.acceptButton)
+        hbox.addWidget(self.cancelButton)
+        ac = QWidget()
+        ac.setLayout(hbox)
+        layout.addWidget(ac)
+        
         self.setLayout( layout )
+        
+    def accept(self):
+        
+        self.settings.setValue('spectrogram/WinLen',float(self.winLenEdit.text()))
+        self.settings.setValue('spectrogram/TimeStep',float(self.timeStepEdit.text()))
+        
+        if self.completeRadio.isChecked():
+            clust = 'complete'
+        elif self.thresholdRadio.isChecked():
+            clust = 'threshold'
+        else:
+            clust = 'incremental'
+        self.settings.setValue('network/ClusterAlgorithm',clust)
+        self.settings.setValue('network/Threshold',float(self.thresholdEdit.text()))
+        
+        
+        self.settings.setValue('envelopes/NumBands',int(self.bandEdit.text()))
+        self.settings.setValue('envelopes/MinFreq',int(self.minFreqEdit.text()))
+        self.settings.setValue('envelopes/MaxFreq',int(self.maxFreqEdit.text()))
+        
+        if self.ccRadio.isChecked():
+            match = 'xcorr'
+        else:
+            match = 'dtw'
+        self.settings.setValue('envelopes/MatchAlgorithm',match)
+        
+        self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
+        self.settings.setValue('mfcc/MaxFreq',int(self.maxMFCCFreqEdit.text()))
+        self.settings.setValue('mfcc/NormAmp',self.ampNormCheck.isChecked())
+        
+        QDialog.accept(self)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -113,34 +262,43 @@ class MainWindow(QMainWindow):
     def loadWordTokens(self):
         g = nx.Graph()
         token_path = self.settings.value('path','')
+        if not os.path.exists(token_path):
+            token_path = ''
+            self.settings.setValue('path','')
         if not token_path:
             return
-        num_bands = self.settings.value('num_bands',8)
-        erb = self.settings.value('erb',False)
-        freq_lims = self.settings.value('freq_lims',(80,7800))
-        if token_path != '':
-            files = os.listdir(token_path)
-            nodes = []
-            ind = 0
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                env = calc_envelope(os.path.join(token_path,f),num_bands,freq_lims,erb)
+        num_bands = int(self.settings.value('envelopes/NumBands',4))
+        erb = self.settings.value('envelopes/ERB',False)
+        freq_lims = (int(self.settings.value('envelopes/MinFreq',80)),int(self.settings.value('envelopes/MaxFreq',7800)))
+        files = os.listdir(token_path)
+        nodes = []
+        ind = 0
+        for f in files:
+            if not (f.endswith('.wav') or f.endswith('.WAV')):
+                continue
+            env = calc_envelope(os.path.join(token_path,f),num_bands,freq_lims,erb)
 
-                nodes.append((ind,{'label':f,'acoustics':{'envelopes':env}}))
-                ind += 1
-
-            edges = []
+            nodes.append((ind,{'label':f,'acoustics':{'envelopes':env}}))
+            ind += 1
+        g.add_nodes_from(nodes)
+        clusterAlgorithm = self.settings.value('network/ClusterAlgorithm','complete')
+        matchAlgorithm = self.settings.value('envelopes/MatchAlgorithm','xcorr')
+        edges = []
+        if clusterAlgorithm == 'incremental':
+            pass
+        else:
+            threshold = float(self.settings.value('network/Threshold'))
             for i in range(len(nodes)-1):
                 envsOne = nodes[i][1]['acoustics']['envelopes']
                 for j in range(i+1,len(nodes)):
                     envsTwo = nodes[j][1]['acoustics']['envelopes']
+                    
                     sim = correlate_envelopes(envsOne,envsTwo)
-                    if sim > 0.9:
-                        edges.append((nodes[i][0],nodes[j][0],sim))
+                    if clusterAlgorithm == 'threshold' and sim < threshold:
+                        continue
+                    edges.append((nodes[i][0],nodes[j][0],sim))
 
-            g.add_nodes_from(nodes)
-            g.add_weighted_edges_from(edges)
+        g.add_weighted_edges_from(edges)
         self.graph = Graph(g)
         self.tokenTable.setModel(self.graph)
         self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
@@ -161,8 +319,11 @@ class MainWindow(QMainWindow):
                 "Go on... ")
 
     def editPreferences(self):
-        dialog = PreferencesDialog(self)
-        dialog.show()
+        dialog = PreferencesDialog(self,self.settings)
+        result = dialog.exec_()
+        if result:
+            self.settings = dialog.settings
+            self.loadWordTokens()
 
     def createMenus(self):
         self.fileMenu = self.menuBar().addMenu("&File")
@@ -225,8 +386,7 @@ class MainWindow(QMainWindow):
                 envsOne = n[1]['acoustics']['envelopes']
             elif n[0] == selectedIndTwo:
                 envsTwo = n[1]['acoustics']['envelopes']
-        self.similarityWindow.plot(envsOne,envsTwo)
-        self.similarityWindow.resize(4,3)
+        self.distanceWindow.plot_dist_mat(envsOne,envsTwo)
 
     def playfile(self):
         return
@@ -267,9 +427,9 @@ class MainWindow(QMainWindow):
         self.viewMenu.addAction(dock.toggleViewAction())
 
 
-        dock = QDockWidget("Similarity", self)
-        self.similarityWindow = SimilarityWidget(parent=dock)
-        dock.setWidget(self.similarityWindow)
+        dock = QDockWidget("Distance", self)
+        self.distanceWindow = DistanceWidget(parent=dock)
+        dock.setWidget(self.distanceWindow)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 

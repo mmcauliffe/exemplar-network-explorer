@@ -1,5 +1,4 @@
 import math
-import sys
 from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 
