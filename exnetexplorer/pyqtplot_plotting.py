@@ -62,9 +62,9 @@ class EnvelopeWidget(pg.PlotWidget):
 
     def plot_envelopes(self,envs):
         self.clear()
-        print(len(envs))
-        for e in envs:
-            self.plot(e)
+        num_bands = envs.shape[1]
+        for i in range(num_bands):
+            self.plot(envs[:,i])
         self.getAxis('bottom').setScale(1/120)
         self.show()
         self.update()
@@ -80,8 +80,6 @@ class DistanceWidget(pg.PlotWidget):
         
     def plot_dist_mat(self,source,target):
         
-        source = np.array(source).T
-        target = np.array(target).T
         distMat = generate_distance_matrix(source,target)
         self.setXRange(0, source.shape[0])
         self.setYRange(0, target.shape[0])

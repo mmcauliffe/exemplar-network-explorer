@@ -1,12 +1,8 @@
 import math
 import sys
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
-from linghelper.distance.dtw import generate_distance_matrix, regularDTW
 
 import os
-import networkx as nx
 import numpy
-import scipy.signal
 
 import PySide
 
@@ -49,6 +45,42 @@ class PreferencesDialog(QDialog):
         
         #Network Tab
         networkLayout = QFormLayout()
+        
+        rep = settings.value('network/Representation','envelope')
+        
+        repBox = QGroupBox()
+        self.envelopeRadio = QRadioButton('Amplitude envelopes')
+        self.mfccRadio = QRadioButton('MFCCs')
+        
+        if rep == 'envelope':
+            self.envelopeRadio.setChecked(True)
+        elif rep == 'mfcc':
+            self.mfccRadio.setChecked(True)
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.envelopeRadio)
+        hbox.addWidget(self.mfccRadio)
+        repBox.setLayout(hbox)
+        
+        networkLayout.addRow(QLabel('Token representation:'),repBox)
+        
+        matchAlgorithmBox = QGroupBox()
+        self.ccRadio = QRadioButton('Cross-correlation')
+        self.dtwRadio = QRadioButton('DTW')
+        
+        matchAlgorithm = settings.value('network/MatchAlgorithm','xcorr')
+        
+        if matchAlgorithm == 'xcorr':
+            self.ccRadio.setChecked(True)
+        else:
+            self.dtwRadio.setChecked(True)
+            
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.ccRadio)
+        hbox.addWidget(self.dtwRadio)
+        matchAlgorithmBox.setLayout(hbox)
+        
+        networkLayout.addRow(QLabel('Similarity algorithm:'),matchAlgorithmBox)
+        
         clusterBox = QGroupBox()
         self.completeRadio = QRadioButton('Complete')
         self.thresholdRadio = QRadioButton('Threshold')
@@ -102,24 +134,6 @@ class PreferencesDialog(QDialog):
         envLayout.addRow(QLabel('ERB:'),self.erbCheck)
         
         
-        matchAlgorithmBox = QGroupBox()
-        self.ccRadio = QRadioButton('Cross-correlation')
-        self.dtwRadio = QRadioButton('DTW')
-        
-        matchAlgorithm = settings.value('envelopes/MatchAlgorithm','xcorr')
-        
-        if matchAlgorithm == 'xcorr':
-            self.ccRadio.setChecked(True)
-        else:
-            self.dtwRadio.setChecked(True)
-            
-        hbox = QHBoxLayout()
-        hbox.addWidget(self.ccRadio)
-        hbox.addWidget(self.dtwRadio)
-        matchAlgorithmBox.setLayout(hbox)
-        
-        envLayout.addRow(QLabel('Envelope matching algorithm:'),matchAlgorithmBox)
-        
         envWidget = QGroupBox('Amplitude envelopes')
         envWidget.setLayout(envLayout)
         
@@ -127,15 +141,17 @@ class PreferencesDialog(QDialog):
         
         mfccLayout = QFormLayout()
         self.numCCEdit = QLineEdit()
-        self.numCCEdit.setText(str(settings.value('mfcc/NumCC',12)))
+        self.numCCEdit.setText(str(settings.value('mfcc/NumCC',20)))
         mfccLayout.addRow(QLabel('Number of coefficents:'),self.numCCEdit)
+        self.mfccWinLenEdit = QLineEdit()
+        self.mfccWinLenEdit.setText(str(settings.value('mfcc/WindowLength',0.015)))
+        mfccLayout.addRow(QLabel('Window length (s):'),self.mfccWinLenEdit)
+        self.mfccTimeStepEdit = QLineEdit()
+        self.mfccTimeStepEdit.setText(str(settings.value('mfcc/TimeStep',0.005)))
+        mfccLayout.addRow(QLabel('Maximum frequency (Hz):'),self.mfccTimeStepEdit)
         self.maxMFCCFreqEdit = QLineEdit()
         self.maxMFCCFreqEdit.setText(str(settings.value('mfcc/MaxFreq',7800)))
         mfccLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxMFCCFreqEdit)
-        self.ampNormCheck = QCheckBox()
-        if settings.value('mfcc/NormAmp',True):
-            self.ampNormCheck.setChecked(True)
-        mfccLayout.addRow(QLabel('Amplitude normalization:'),self.ampNormCheck)
         
         mfccWidget = QGroupBox('MFCC DTW')
         mfccWidget.setLayout(mfccLayout)
@@ -172,6 +188,18 @@ class PreferencesDialog(QDialog):
         self.settings.setValue('spectrogram/WinLen',float(self.winLenEdit.text()))
         self.settings.setValue('spectrogram/TimeStep',float(self.timeStepEdit.text()))
         
+        if self.mfccRadio.isChecked():
+            rep = 'mfcc'
+        else:
+            rep = 'envelope'
+        self.settings.setValue('network/Representation',rep)
+        
+        if self.ccRadio.isChecked():
+            match = 'xcorr'
+        else:
+            match = 'dtw'
+        self.settings.setValue('network/MatchAlgorithm',match)
+        
         if self.completeRadio.isChecked():
             clust = 'complete'
         elif self.thresholdRadio.isChecked():
@@ -186,15 +214,10 @@ class PreferencesDialog(QDialog):
         self.settings.setValue('envelopes/MinFreq',int(self.minFreqEdit.text()))
         self.settings.setValue('envelopes/MaxFreq',int(self.maxFreqEdit.text()))
         
-        if self.ccRadio.isChecked():
-            match = 'xcorr'
-        else:
-            match = 'dtw'
-        self.settings.setValue('envelopes/MatchAlgorithm',match)
-        
         self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
+        self.settings.setValue('mfcc/WindowLength',int(self.mfccWinLenEdit.text()))
+        self.settings.setValue('mfcc/TimeStep',int(self.mfccTimeStepEdit.text()))
         self.settings.setValue('mfcc/MaxFreq',int(self.maxMFCCFreqEdit.text()))
-        self.settings.setValue('mfcc/NormAmp',self.ampNormCheck.isChecked())
         
         QDialog.accept(self)
 
@@ -216,7 +239,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.graphWidget)
         self.wrapper.setLayout(layout)
         self.setCentralWidget(self.wrapper)
-        self.loadWordTokens()
 
 
         self.setWindowTitle("Exemplar Network Explorer")
@@ -225,6 +247,12 @@ class MainWindow(QMainWindow):
         self.createToolBars()
         self.createStatusBar()
         self.createDockWindows()
+        
+        self.graph = Graph()
+        self.tokenTable.setModel(self.graph)
+        self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
+        self.tokenTable.selectionModel().selectionChanged.connect(self.selectToken)
+        self.graphWidget.setModel(self.tokenTable.model())
 
     def createActions(self):
 
@@ -259,51 +287,9 @@ class MainWindow(QMainWindow):
                 statusTip="Show the application's About box",
                 triggered=self.about)
 
-    def loadWordTokens(self):
-        g = nx.Graph()
-        token_path = self.settings.value('path','')
-        if not os.path.exists(token_path):
-            token_path = ''
-            self.settings.setValue('path','')
-        if not token_path:
-            return
-        num_bands = int(self.settings.value('envelopes/NumBands',4))
-        erb = self.settings.value('envelopes/ERB',False)
-        freq_lims = (int(self.settings.value('envelopes/MinFreq',80)),int(self.settings.value('envelopes/MaxFreq',7800)))
-        files = os.listdir(token_path)
-        nodes = []
-        ind = 0
-        for f in files:
-            if not (f.endswith('.wav') or f.endswith('.WAV')):
-                continue
-            env = calc_envelope(os.path.join(token_path,f),num_bands,freq_lims,erb)
-
-            nodes.append((ind,{'label':f,'acoustics':{'envelopes':env}}))
-            ind += 1
-        g.add_nodes_from(nodes)
-        clusterAlgorithm = self.settings.value('network/ClusterAlgorithm','complete')
-        matchAlgorithm = self.settings.value('envelopes/MatchAlgorithm','xcorr')
-        edges = []
-        if clusterAlgorithm == 'incremental':
-            pass
-        else:
-            threshold = float(self.settings.value('network/Threshold'))
-            for i in range(len(nodes)-1):
-                envsOne = nodes[i][1]['acoustics']['envelopes']
-                for j in range(i+1,len(nodes)):
-                    envsTwo = nodes[j][1]['acoustics']['envelopes']
-                    
-                    sim = correlate_envelopes(envsOne,envsTwo)
-                    if clusterAlgorithm == 'threshold' and sim < threshold:
-                        continue
-                    edges.append((nodes[i][0],nodes[j][0],sim))
-
-        g.add_weighted_edges_from(edges)
-        self.graph = Graph(g)
-        self.tokenTable.setModel(self.graph)
-        self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
-        self.tokenTable.selectionModel().selectionChanged.connect(self.selectToken)
-        self.graphWidget.setModel(self.tokenTable.model())
+    def loadWordTokens(self,full_reset=False):
+        if full_reset:
+            g = nx.Graph()
 
     def createNetwork(self):
         token_path = QFileDialog.getExistingDirectory(self,

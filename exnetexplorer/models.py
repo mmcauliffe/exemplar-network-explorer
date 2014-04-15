@@ -1,5 +1,10 @@
 import math
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
+from linghelper.phonetics.representations.amplitude_envelopes import to_envelopes
+from linghelper.phonetics.representations.prosody import to_pitch,to_intensity
+from linghelper.phonetics.representations.mfcc import to_mfcc,freq_to_mel
+from linghelper.distance.dtw import dtw_distance
+from linghelper.distance.dct import dct_distance
+from linghelper.distance.xcorr import xcorr_distance
 
 
 import os
@@ -15,9 +20,9 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog)
 
 class Graph(QAbstractTableModel):
-    def __init__(self,g,parent=None):
+    def __init__(self,parent=None):
         super(Graph, self).__init__(parent=parent)
-        self.g = g
+        self.g = nx.Graph()
         node = next(self.g.nodes_iter(data=True))
         if node is not None:
 
@@ -26,6 +31,67 @@ class Graph(QAbstractTableModel):
                         and not isinstance(node[1][x],list)]
         else:
             self.columns = []
+
+    def loadData(self,settings):
+        self.g = nx.Graph()
+        token_path = settings.value('path','')
+        if not os.path.exists(token_path):
+            token_path = ''
+        if not token_path:
+            return
+        rep = settings.value('network/Representation','envelope')
+        files = os.listdir(token_path)
+        nodes = []
+        ind = 0
+        if rep == 'envelope':
+            num_bands = settings.value('envelopes/NumBands',4)
+            erb = settings.value('envelopes/ERB',False)
+            freq_lims = (settings.value('envelopes/MinFreq',80),settings.value('envelopes/MaxFreq',7800))
+            for f in files:
+                if not (f.endswith('.wav') or f.endswith('.WAV')):
+                    continue
+                env = to_envelopes(os.path.join(token_path,f),num_bands,freq_lims,erb)
+
+                nodes.append((ind,{'label':f,'acoustics':{rep:env}}))
+                ind += 1
+        elif rep == 'mfcc':
+            numCC = settings.value('mfcc/NumCC',20)
+            winLen = settings.value('mfcc/WindowLength',0.015)
+            timeStep = settings.value('mfcc/TimeStep',0.005)
+            maxFreq = freq_to_mel(settings.value('mfcc/MaxFreq',7800))
+            for f in files:
+                if not (f.endswith('.wav') or f.endswith('.WAV')):
+                    continue
+                mfcc = to_mfcc(os.path.join(token_path,f),numCC,winLen,timeStep,maxFreq)
+                nodes.append((ind,{'label':f,'acoustics':{rep:mfcc}}))
+                ind += 1
+        else:
+            return
+        self.g.add_nodes_from(nodes)
+        clusterAlgorithm = settings.value('network/ClusterAlgorithm','complete')
+        matchAlgorithm = settings.value('envelopes/MatchAlgorithm','xcorr')
+        if matchAlgorithm == 'xcorr':
+            dist_func = xcorr_distance
+        elif matchAlgorithm == 'dtw':
+            dist_func = dtw_distance
+        elif matchAlgorithm == 'dct':
+            dist_func = dct_distance
+        edges = []
+        if clusterAlgorithm == 'incremental':
+            pass
+        else:
+            threshold = float(self.settings.value('network/Threshold'))
+            for i in range(len(nodes)-1):
+                envsOne = nodes[i][1]['acoustics'][rep]
+                for j in range(i+1,len(nodes)):
+                    envsTwo = nodes[j][1]['acoustics'][rep]
+                    
+                    sim = 1/math.pow(math.e,dist_func(envsOne,envsTwo))
+                    if clusterAlgorithm == 'threshold' and sim < threshold:
+                        continue
+                    edges.append((nodes[i][0],nodes[j][0],sim))
+
+        self.g.add_weighted_edges_from(edges)
 
     def rowCount(self,parent=None):
         return self.g.number_of_nodes()
