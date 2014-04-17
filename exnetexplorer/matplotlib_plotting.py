@@ -4,7 +4,6 @@ from PySide.QtCore import QSize
 
 import numpy as np
 
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 
 from scipy.signal import resample

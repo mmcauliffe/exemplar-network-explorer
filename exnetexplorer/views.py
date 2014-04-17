@@ -1,11 +1,9 @@
 import math
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 
 import os
 import networkx as nx
 import numpy
-import scipy.signal
 
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
         Qt, QTime,QSettings,QSize,QPoint)

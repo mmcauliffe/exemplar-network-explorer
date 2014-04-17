@@ -3,7 +3,6 @@ from pyqtgraph.Qt import QtGui, QtCore
 import numpy as np
 import pyqtgraph as pg
 
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
 
 from linghelper.distance.dtw import generate_distance_matrix
 

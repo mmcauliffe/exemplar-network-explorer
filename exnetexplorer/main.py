@@ -16,10 +16,11 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QCheckBox)
 
 from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget
-from matplotlib_plotting import SimilarityWidget
 
 from views import GraphWidget, TableWidget, NetworkGraphicsView
 from models import Graph
+
+
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent, settings):
@@ -51,14 +52,26 @@ class PreferencesDialog(QDialog):
         repBox = QGroupBox()
         self.envelopeRadio = QRadioButton('Amplitude envelopes')
         self.mfccRadio = QRadioButton('MFCCs')
+        self.mhecRadio = QRadioButton('MHECs')
+        self.prosodyRadio = QRadioButton('Prosody')
+        self.formantRadio = QRadioButton('Formants')
         
-        if rep == 'envelope':
-            self.envelopeRadio.setChecked(True)
-        elif rep == 'mfcc':
+        if rep == 'mfcc':
             self.mfccRadio.setChecked(True)
+        elif rep == 'mhec':
+            self.mhecRadio.setChecked(True)
+        elif rep == 'prosody':
+            self.prosodyRadio.setChecked(True)
+        elif rep == 'formant':
+            self.formantRadio.setChecked(True)
+        else:
+            self.envelopeRadio.setChecked(True)
         hbox = QHBoxLayout()
         hbox.addWidget(self.envelopeRadio)
         hbox.addWidget(self.mfccRadio)
+        hbox.addWidget(self.mhecRadio)
+        hbox.addWidget(self.prosodyRadio)
+        hbox.addWidget(self.formantRadio)
         repBox.setLayout(hbox)
         
         networkLayout.addRow(QLabel('Token representation:'),repBox)
@@ -66,17 +79,21 @@ class PreferencesDialog(QDialog):
         matchAlgorithmBox = QGroupBox()
         self.ccRadio = QRadioButton('Cross-correlation')
         self.dtwRadio = QRadioButton('DTW')
+        self.dctRadio = QRadioButton('DCT')
         
         matchAlgorithm = settings.value('network/MatchAlgorithm','xcorr')
         
         if matchAlgorithm == 'xcorr':
             self.ccRadio.setChecked(True)
+        if matchAlgorithm == 'dct':
+            self.dctRadio.setChecked(True)
         else:
             self.dtwRadio.setChecked(True)
             
         hbox = QHBoxLayout()
         hbox.addWidget(self.ccRadio)
         hbox.addWidget(self.dtwRadio)
+        hbox.addWidget(self.dctRadio)
         matchAlgorithmBox.setLayout(hbox)
         
         networkLayout.addRow(QLabel('Similarity algorithm:'),matchAlgorithmBox)
@@ -190,12 +207,21 @@ class PreferencesDialog(QDialog):
         
         if self.mfccRadio.isChecked():
             rep = 'mfcc'
+        elif self.mhecRadio.isChecked():
+            rep = 'mhec'
+        elif self.mfccRadio.isChecked():
+            rep = 'prosody'
+        elif self.mfccRadio.isChecked():
+            rep = 'formant'
         else:
             rep = 'envelope'
+            
         self.settings.setValue('network/Representation',rep)
         
         if self.ccRadio.isChecked():
             match = 'xcorr'
+        elif self.dctRadio.isChecked():
+            match = 'dct'
         else:
             match = 'dtw'
         self.settings.setValue('network/MatchAlgorithm',match)
@@ -215,8 +241,8 @@ class PreferencesDialog(QDialog):
         self.settings.setValue('envelopes/MaxFreq',int(self.maxFreqEdit.text()))
         
         self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
-        self.settings.setValue('mfcc/WindowLength',int(self.mfccWinLenEdit.text()))
-        self.settings.setValue('mfcc/TimeStep',int(self.mfccTimeStepEdit.text()))
+        self.settings.setValue('mfcc/WindowLength',float(self.mfccWinLenEdit.text()))
+        self.settings.setValue('mfcc/TimeStep',float(self.mfccTimeStepEdit.text()))
         self.settings.setValue('mfcc/MaxFreq',int(self.maxMFCCFreqEdit.text()))
         
         QDialog.accept(self)
@@ -249,6 +275,7 @@ class MainWindow(QMainWindow):
         self.createDockWindows()
         
         self.graph = Graph()
+        self.graph.loadData(self.settings)
         self.tokenTable.setModel(self.graph)
         self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
         self.tokenTable.selectionModel().selectionChanged.connect(self.selectToken)
@@ -288,8 +315,7 @@ class MainWindow(QMainWindow):
                 triggered=self.about)
 
     def loadWordTokens(self,full_reset=False):
-        if full_reset:
-            g = nx.Graph()
+        self.graph.loadData(self.settings)
 
     def createNetwork(self):
         token_path = QFileDialog.getExistingDirectory(self,
@@ -352,10 +378,11 @@ class MainWindow(QMainWindow):
         if len(selected) > 1:
             return
 
+        rep = self.settings.value('network/Representation','envelope')
         selectedInd = selected[0].row()
         for n in self.graph.g.nodes_iter(data=True):
             if n[0] == selectedInd:
-                self.envelopeWindow.plot_envelopes(n[1]['acoustics']['envelopes'])
+                self.envelopeWindow.plot_envelopes(n[1]['acoustics'][rep])
                 break
 
     def similarity(self):
@@ -367,11 +394,12 @@ class MainWindow(QMainWindow):
         selectedIndTwo = selected[1].row()
         envsOne = []
         envsTwo = []
+        rep = self.settings.value('network/Representation','envelope')
         for n in self.graph.g.nodes_iter(data=True):
             if n[0] == selectedIndOne:
-                envsOne = n[1]['acoustics']['envelopes']
+                envsOne = n[1]['acoustics'][rep]
             elif n[0] == selectedIndTwo:
-                envsTwo = n[1]['acoustics']['envelopes']
+                envsTwo = n[1]['acoustics'][rep]
         self.distanceWindow.plot_dist_mat(envsOne,envsTwo)
 
     def playfile(self):
