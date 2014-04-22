@@ -1,6 +1,6 @@
 import math
 from linghelper.phonetics.representations.amplitude_envelopes import to_envelopes
-from linghelper.phonetics.representations.prosody import to_pitch,to_intensity
+from linghelper.phonetics.representations.prosody import to_pitch,to_intensity,to_prosody
 from linghelper.phonetics.representations.mfcc import to_mfcc,freq_to_mel
 from linghelper.phonetics.representations.mhec import to_mhec
 from linghelper.distance.dtw import dtw_distance
@@ -25,6 +25,8 @@ class Graph(QAbstractTableModel):
         super(Graph, self).__init__(parent=parent)
         self.g = nx.Graph()
         self.columns = []
+        self.time_step = 0
+        self.rep = ''
 
     def loadData(self,settings):
         self.g = nx.Graph()
@@ -37,7 +39,9 @@ class Graph(QAbstractTableModel):
         files = os.listdir(token_path)
         nodes = []
         ind = 0
+        self.rep = rep
         if rep == 'envelope':
+            self.time_step = 1/120
             num_bands = int(settings.value('envelopes/NumBands',4))
             erb = settings.value('envelopes/ERB',False)
             freq_lims = (int(settings.value('envelopes/MinFreq',80)),int(settings.value('envelopes/MaxFreq',7800)))
@@ -52,6 +56,7 @@ class Graph(QAbstractTableModel):
             numCC = int(settings.value('mfcc/NumCC',20))
             winLen = float(settings.value('mfcc/WindowLength',0.015))
             timeStep = float(settings.value('mfcc/TimeStep',0.005))
+            self.time_step = timeStep
             maxFreq = freq_to_mel(int(settings.value('mfcc/MaxFreq',7800)))
             for f in files:
                 if not (f.endswith('.wav') or f.endswith('.WAV')):
@@ -64,12 +69,22 @@ class Graph(QAbstractTableModel):
             numBands = int(settings.value('mhec/NumBands',48))
             winLen = float(settings.value('mhec/WindowLength',0.025))
             timeStep = float(settings.value('mhec/TimeStep',0.01))
+            self.time_step = timeStep
             freq_lims = (int(settings.value('mhec/MinFreq',80)),int(settings.value('mhec/MaxFreq',7800)))
             for f in files:
                 if not (f.endswith('.wav') or f.endswith('.WAV')):
                     continue
                 mhec = to_mhec(os.path.join(token_path,f),numCC,numBands,freq_lims,winLen,timeStep)
                 nodes.append((ind,{'label':f,'acoustics':{rep:mhec}}))
+                ind += 1
+        elif rep == 'prosody':
+            timeStep = float(settings.value('prosody/TimeStep',0.01))
+            self.time_step = timeStep
+            for f in files:
+                if not (f.endswith('.wav') or f.endswith('.WAV')):
+                    continue
+                prosody = to_prosody(os.path.join(token_path,f),timeStep)
+                nodes.append((ind,{'label':f,'acoustics':{rep:prosody}}))
                 ind += 1
         else:
             return

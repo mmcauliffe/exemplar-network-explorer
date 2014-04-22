@@ -85,7 +85,7 @@ class PreferencesDialog(QDialog):
         
         if matchAlgorithm == 'xcorr':
             self.ccRadio.setChecked(True)
-        if matchAlgorithm == 'dct':
+        elif matchAlgorithm == 'dct':
             self.dctRadio.setChecked(True)
         else:
             self.dtwRadio.setChecked(True)
@@ -209,9 +209,9 @@ class PreferencesDialog(QDialog):
             rep = 'mfcc'
         elif self.mhecRadio.isChecked():
             rep = 'mhec'
-        elif self.mfccRadio.isChecked():
+        elif self.prosodyRadio.isChecked():
             rep = 'prosody'
-        elif self.mfccRadio.isChecked():
+        elif self.formantRadio.isChecked():
             rep = 'formant'
         else:
             rep = 'envelope'
