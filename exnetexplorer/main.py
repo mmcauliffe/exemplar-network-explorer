@@ -32,17 +32,23 @@ class PreferencesDialog(QDialog):
         
         specLayout = QFormLayout()
         self.winLenEdit = QLineEdit()
-        self.winLenEdit.setText(str(settings.value('spectrogram/WinLen',0.025)))
+        self.winLenEdit.setText(str(settings.value('general/WinLen',0.025)))
         specLayout.addRow(QLabel('Window length (s):'),self.winLenEdit)
         self.timeStepEdit = QLineEdit()
-        self.timeStepEdit.setText(str(settings.value('spectrogram/TimeStep',0.01)))
+        self.timeStepEdit.setText(str(settings.value('general/TimeStep',0.01)))
         specLayout.addRow(QLabel('Time step (s):'),self.timeStepEdit)
+        self.minFreqEdit = QLineEdit()
+        self.minFreqEdit.setText(str(settings.value('general/MinFreq',80)))
+        specLayout.addRow(QLabel('Minimum frequency (Hz):'),self.minFreqEdit)
+        self.maxFreqEdit = QLineEdit()
+        self.maxFreqEdit.setText(str(settings.value('general/MaxFreq',7800)))
+        specLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxFreqEdit)
         
         
         specWidget = QWidget()
         specWidget.setLayout(specLayout)
         
-        tabWidget.addTab(specWidget,'Spectrogram')
+        tabWidget.addTab(specWidget,'General')
         
         #Network Tab
         networkLayout = QFormLayout()
@@ -139,12 +145,6 @@ class PreferencesDialog(QDialog):
         self.bandEdit = QLineEdit()
         self.bandEdit.setText(str(settings.value('envelopes/NumBands',4)))
         envLayout.addRow(QLabel('Number of bands:'),self.bandEdit)
-        self.minFreqEdit = QLineEdit()
-        self.minFreqEdit.setText(str(settings.value('envelopes/MinFreq',80)))
-        envLayout.addRow(QLabel('Minimum frequency (Hz):'),self.minFreqEdit)
-        self.maxFreqEdit = QLineEdit()
-        self.maxFreqEdit.setText(str(settings.value('envelopes/MaxFreq',7800)))
-        envLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxFreqEdit)
         self.erbCheck = QCheckBox()
         if self.settings.value('envelopes/ERB',False):
             self.erbCheck.setChecked(True)
@@ -160,17 +160,8 @@ class PreferencesDialog(QDialog):
         self.numCCEdit = QLineEdit()
         self.numCCEdit.setText(str(settings.value('mfcc/NumCC',20)))
         mfccLayout.addRow(QLabel('Number of coefficents:'),self.numCCEdit)
-        self.mfccWinLenEdit = QLineEdit()
-        self.mfccWinLenEdit.setText(str(settings.value('mfcc/WindowLength',0.015)))
-        mfccLayout.addRow(QLabel('Window length (s):'),self.mfccWinLenEdit)
-        self.mfccTimeStepEdit = QLineEdit()
-        self.mfccTimeStepEdit.setText(str(settings.value('mfcc/TimeStep',0.005)))
-        mfccLayout.addRow(QLabel('Maximum frequency (Hz):'),self.mfccTimeStepEdit)
-        self.maxMFCCFreqEdit = QLineEdit()
-        self.maxMFCCFreqEdit.setText(str(settings.value('mfcc/MaxFreq',7800)))
-        mfccLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxMFCCFreqEdit)
         
-        mfccWidget = QGroupBox('MFCC DTW')
+        mfccWidget = QGroupBox('MFCC')
         mfccWidget.setLayout(mfccLayout)
         
         simLayout.addWidget(mfccWidget)
@@ -178,7 +169,7 @@ class PreferencesDialog(QDialog):
         simWidget = QWidget()
         simWidget.setLayout(simLayout)
         
-        tabWidget.addTab(simWidget,'Similarity')
+        tabWidget.addTab(simWidget,'Representations')
         
 
         layout = QVBoxLayout()
@@ -202,8 +193,10 @@ class PreferencesDialog(QDialog):
         
     def accept(self):
         
-        self.settings.setValue('spectrogram/WinLen',float(self.winLenEdit.text()))
-        self.settings.setValue('spectrogram/TimeStep',float(self.timeStepEdit.text()))
+        self.settings.setValue('general/WinLen',float(self.winLenEdit.text()))
+        self.settings.setValue('general/TimeStep',float(self.timeStepEdit.text()))
+        self.settings.setValue('general/MinFreq',int(self.minFreqEdit.text()))
+        self.settings.setValue('general/MaxFreq',int(self.maxFreqEdit.text()))
         
         if self.mfccRadio.isChecked():
             rep = 'mfcc'
@@ -237,13 +230,8 @@ class PreferencesDialog(QDialog):
         
         
         self.settings.setValue('envelopes/NumBands',int(self.bandEdit.text()))
-        self.settings.setValue('envelopes/MinFreq',int(self.minFreqEdit.text()))
-        self.settings.setValue('envelopes/MaxFreq',int(self.maxFreqEdit.text()))
         
         self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
-        self.settings.setValue('mfcc/WindowLength',float(self.mfccWinLenEdit.text()))
-        self.settings.setValue('mfcc/TimeStep',float(self.mfccTimeStepEdit.text()))
-        self.settings.setValue('mfcc/MaxFreq',int(self.maxMFCCFreqEdit.text()))
         
         QDialog.accept(self)
 
