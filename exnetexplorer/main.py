@@ -15,7 +15,7 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QPushButton,QLabel,QTabWidget,QGroupBox, QRadioButton,QVBoxLayout,QLineEdit,QFormLayout,
         QCheckBox)
 
-from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget
+from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget,NetworkWidget
 
 from views import GraphWidget, TableWidget, NetworkGraphicsView
 from models import Graph
@@ -145,10 +145,14 @@ class PreferencesDialog(QDialog):
         self.bandEdit = QLineEdit()
         self.bandEdit.setText(str(settings.value('envelopes/NumBands',4)))
         envLayout.addRow(QLabel('Number of bands:'),self.bandEdit)
-        self.erbCheck = QCheckBox()
-        if self.settings.value('envelopes/ERB',False):
-            self.erbCheck.setChecked(True)
-        envLayout.addRow(QLabel('ERB:'),self.erbCheck)
+        self.gammatoneCheck = QCheckBox()
+        if self.settings.value('envelopes/Gammatone',False):
+            self.gammatoneCheck.setChecked(True)
+        envLayout.addRow(QLabel('Gammatone:'),self.gammatoneCheck)
+        self.windowCheck = QCheckBox()
+        if self.settings.value('envelopes/Windowed',False):
+            self.gammatoneCheck.setChecked(True)
+        envLayout.addRow(QLabel('Windowed:'),self.windowCheck)
         
         
         envWidget = QGroupBox('Amplitude envelopes')
@@ -230,6 +234,8 @@ class PreferencesDialog(QDialog):
         
         
         self.settings.setValue('envelopes/NumBands',int(self.bandEdit.text()))
+        self.settings.setValue('envelopes/Gammatone',int(self.gammatoneCheck.isChecked()))
+        self.settings.setValue('envelopes/Windowed',int(self.windowCheck.isChecked()))
         
         self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
         
@@ -246,7 +252,7 @@ class MainWindow(QMainWindow):
         self.resize(self.settings.value('size', QSize(270, 225)))
         self.move(self.settings.value('pos', QPoint(50, 50)))
         self.tokenTable = TableWidget(self)
-        self.graphWidget = GraphWidget(self)
+        self.graphWidget = NetworkWidget(parent=self)
         self.wrapper = QWidget()
         layout = QHBoxLayout(self.wrapper)
         layout.addWidget(self.tokenTable)
@@ -262,12 +268,7 @@ class MainWindow(QMainWindow):
         self.createStatusBar()
         self.createDockWindows()
         
-        self.graph = Graph()
-        self.graph.loadData(self.settings)
-        self.tokenTable.setModel(self.graph)
-        self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
-        self.tokenTable.selectionModel().selectionChanged.connect(self.selectToken)
-        self.graphWidget.setModel(self.tokenTable.model())
+        self.loadWordTokens()
 
     def createActions(self):
 
@@ -303,7 +304,15 @@ class MainWindow(QMainWindow):
                 triggered=self.about)
 
     def loadWordTokens(self,full_reset=False):
+        self.graph = Graph()
         self.graph.loadData(self.settings)
+        graphSelectionModel = QItemSelectionModel(self.graph)
+        self.tokenTable.setModel(self.graph)
+        self.tokenTable.setSelectionModel(graphSelectionModel)
+        self.tokenTable.selectionModel().selectionChanged.connect(self.selectTableToken)
+        self.graphWidget.setModel(self.tokenTable.model())
+        self.graphWidget.setSelectionModel(graphSelectionModel)
+        self.graphWidget.selectionModel().selectionChanged.connect(self.selectGraphToken)
 
     def createNetwork(self):
         token_path = QFileDialog.getExistingDirectory(self,
@@ -407,6 +416,14 @@ class MainWindow(QMainWindow):
             self.envelope()
         elif len(selected) == 2:
             self.similarity()
+
+    def selectTableToken(self):
+        self.graphWidget.setSelectionModel(self.tokenTable.selectionModel())
+        self.selectToken()
+
+    def selectGraphToken(self):
+        self.tokenTable.setSelectionModel(self.graphWidget.selectionModel())
+        self.selectToken()
 
 
     def createDockWindows(self):

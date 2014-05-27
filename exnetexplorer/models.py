@@ -92,14 +92,28 @@ class Graph(QAbstractTableModel):
         edges = []
         if clusterAlgorithm == 'incremental':
             pass
+        elif clusterAlgorithm == 'affinitypropagation':
+            from sklearn.cluster import AffinityPropagation
+            simMat = zeroes(len(nodes))
+            for i in range(len(nodes)-1):
+                repOne = nodes[i][1]['acoustics'][rep]
+                for j in range(i+1, len(nodes)):
+                    repTwo = nodes[j][1]['acoustics'][rep]
+                    
+                    sim = -1 * dist_func(repOne,repTwo)
+                    simMat[i,j] = sim
+            af = AffinityPropagation(affinity = 'precomputed').fit(simMat)
+            for i in range(len(nodes)-1):
+                for j in range(i+1, len(nodes)):
+                    pass
         else:
-            threshold = float(settings.value('network/Threshold'))
+            threshold = float(settings.value('network/Threshold',0.9))
             for i in range(len(nodes)-1):
                 repOne = nodes[i][1]['acoustics'][rep]
                 for j in range(i+1,len(nodes)):
                     repTwo = nodes[j][1]['acoustics'][rep]
                     
-                    sim = 1/math.pow(math.e,dist_func(repOne,repTwo))
+                    sim = 1/dist_func(repOne,repTwo)
                     if clusterAlgorithm == 'threshold' and sim < threshold:
                         continue
                     edges.append((nodes[i][0],nodes[j][0],sim))

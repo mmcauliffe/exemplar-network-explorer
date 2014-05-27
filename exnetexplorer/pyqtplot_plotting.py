@@ -2,6 +2,7 @@
 from pyqtgraph.Qt import QtGui, QtCore
 import numpy as np
 import pyqtgraph as pg
+import networkx as nx
 
 
 from linghelper.distance.dtw import generate_distance_matrix
@@ -51,7 +52,72 @@ class SpecgramWidget(pg.PlotWidget):
         self.heatmap.setImage(Z.T,opacity=0.7)
         self.show()
         self.update()
+
+class NetworkGraph(pg.GraphItem):
+    def __init__(self):
+        pg.GraphItem.__init__(self)
+        self.scatter.sigClicked.connect(self.clicked)
+    
+    def mouseClickEvent(self,event):
+        print(event)
+        pos = event.pos()
+        print(pos)
+        pts = self.scatter.pointsAt(pos)
+        if len(pts) == 0:
+            event.ignore()
+            return
+        print(pts)
         
+    
+    def clicked(self,pts):
+        print(pts.data)
+
+class NetworkWidget(pg.GraphicsWindow):
+    def __init__(self,parent=None):
+        pg.GraphicsWindow.__init__(self,parent=parent)
+        self.graphModel = None
+        self.selectionGraphModel = None
+        self.v = self.addViewBox()
+        self.g = NetworkGraph()
+        self.v.addItem(self.g)
+        self.pos = None
+        self.adj = None
+        self.symbols = None
+        
+    def setModel(self,model):
+        self.graphModel = model
+        spring = nx.spring_layout(self.graphModel.g)
+        self.pos = np.array([spring[k] for k in sorted(spring.keys())])
+        self.adj = np.array(self.graphModel.g.edges(data=False))
+        self.symbols = np.array(['o']*len(self.graphModel.g))
+        self.update()
+        
+    def setSelectionModel(self,selectionModel):
+        self.selectionGraphModel = selectionModel
+        selected = self.selectionModel().selectedRows()
+        if not selected:
+            return
+        selectedInd = selected[0].row()
+        self.symbols = np.array(['o']*len(self.graphModel.g))
+        self.symbols[selectedInd] = '+'
+        self.update()
+        
+    def model(self):
+        return self.graphModel
+        
+    def selectionModel(self):
+        return self.selectionGraphModel
+    
+    
+    def update(self):
+        self.g.setData(pos=self.pos,adj=self.adj,symbol = self.symbols)
+        #r = 800
+        #m = -400
+        #for i,n in enumerate(nodeItems):
+        #    x,y = pos[nodes[i][0]]
+        #    x = r*x + m
+        #    y = r*y + m
+        #    n.setPos(x,y)
 
 class EnvelopeWidget(pg.PlotWidget):
     def __init__(self,parent=None):
