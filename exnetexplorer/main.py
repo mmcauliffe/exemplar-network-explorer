@@ -13,12 +13,12 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget, QHBoxLayout, QWidget,
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel,
         QPushButton,QLabel,QTabWidget,QGroupBox, QRadioButton,QVBoxLayout,QLineEdit,QFormLayout,
-        QCheckBox)
+        QCheckBox,QFont)
 
-from pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget,NetworkWidget
+from exnetexplorer.pyqtplot_plotting import SpecgramWidget,EnvelopeWidget,DistanceWidget,NetworkWidget
 
-from views import GraphWidget, TableWidget, NetworkGraphicsView
-from models import Graph
+from exnetexplorer.views import GraphWidget, TableWidget, NetworkGraphicsView
+from exnetexplorer.models import Graph
 
 
 
@@ -29,7 +29,7 @@ class PreferencesDialog(QDialog):
         self.settings = settings
 
         tabWidget = QTabWidget()
-        
+
         specLayout = QFormLayout()
         self.winLenEdit = QLineEdit()
         self.winLenEdit.setText(str(settings.value('general/WinLen',0.025)))
@@ -43,25 +43,25 @@ class PreferencesDialog(QDialog):
         self.maxFreqEdit = QLineEdit()
         self.maxFreqEdit.setText(str(settings.value('general/MaxFreq',7800)))
         specLayout.addRow(QLabel('Maximum frequency (Hz):'),self.maxFreqEdit)
-        
-        
+
+
         specWidget = QWidget()
         specWidget.setLayout(specLayout)
-        
+
         tabWidget.addTab(specWidget,'General')
-        
+
         #Network Tab
         networkLayout = QFormLayout()
-        
-        rep = settings.value('network/Representation','envelope')
-        
+
+        rep = settings.value('network/Representation','mfcc')
+
         repBox = QGroupBox()
         self.envelopeRadio = QRadioButton('Amplitude envelopes')
         self.mfccRadio = QRadioButton('MFCCs')
         self.mhecRadio = QRadioButton('MHECs')
         self.prosodyRadio = QRadioButton('Prosody')
         self.formantRadio = QRadioButton('Formants')
-        
+
         if rep == 'mfcc':
             self.mfccRadio.setChecked(True)
         elif rep == 'mhec':
@@ -70,7 +70,7 @@ class PreferencesDialog(QDialog):
             self.prosodyRadio.setChecked(True)
         elif rep == 'formant':
             self.formantRadio.setChecked(True)
-        else:
+        elif rep == 'envelopes':
             self.envelopeRadio.setChecked(True)
         hbox = QHBoxLayout()
         hbox.addWidget(self.envelopeRadio)
@@ -79,68 +79,78 @@ class PreferencesDialog(QDialog):
         hbox.addWidget(self.prosodyRadio)
         hbox.addWidget(self.formantRadio)
         repBox.setLayout(hbox)
-        
+
         networkLayout.addRow(QLabel('Token representation:'),repBox)
-        
+
         matchAlgorithmBox = QGroupBox()
         self.ccRadio = QRadioButton('Cross-correlation')
         self.dtwRadio = QRadioButton('DTW')
         self.dctRadio = QRadioButton('DCT')
-        
+
         matchAlgorithm = settings.value('network/MatchAlgorithm','xcorr')
-        
+
         if matchAlgorithm == 'xcorr':
             self.ccRadio.setChecked(True)
         elif matchAlgorithm == 'dct':
             self.dctRadio.setChecked(True)
         else:
             self.dtwRadio.setChecked(True)
-            
+
         hbox = QHBoxLayout()
         hbox.addWidget(self.ccRadio)
         hbox.addWidget(self.dtwRadio)
         hbox.addWidget(self.dctRadio)
         matchAlgorithmBox.setLayout(hbox)
-        
+
         networkLayout.addRow(QLabel('Similarity algorithm:'),matchAlgorithmBox)
-        
+
         clusterBox = QGroupBox()
         self.completeRadio = QRadioButton('Complete')
         self.thresholdRadio = QRadioButton('Threshold')
-        self.incrementalRadio = QRadioButton('Incremental')
-        
+        self.apRadio = QRadioButton('Affinity propagation')
+        self.scRadio = QRadioButton('Spectral clustering')
+
         clustAlgorithm = settings.value('network/clusterAlgorithm','complete')
-        
+
         if clustAlgorithm == 'complete':
             self.completeRadio.setChecked(True)
         elif clustAlgorithm == 'threshold':
             self.thresholdRadio.setChecked(True)
-        else:
-            self.incrementalRadio.setChecked(True)
-            
+        elif clustAlgorithm == 'affinity':
+            self.apRadio.setChecked(True)
+        elif clustAlgorithm == 'spectral':
+            self.scRadio.setChecked(True)
+
         hbox = QHBoxLayout()
         hbox.addWidget(self.completeRadio)
         hbox.addWidget(self.thresholdRadio)
-        hbox.addWidget(self.incrementalRadio)
+        hbox.addWidget(self.apRadio)
+        hbox.addWidget(self.scRadio)
         clusterBox.setLayout(hbox)
-        
+
         networkLayout.addRow(QLabel('Cluster algorithm:'),clusterBox)
-        
+
+
+        self.oneClusterCheck = QCheckBox()
+        if self.settings.value('network/OneCluster',True):
+            self.oneClusterCheck.setChecked(True)
+        networkLayout.addRow(QLabel('Enforce single cluster:'),self.oneClusterCheck)
+
         self.thresholdEdit = QLineEdit()
         self.thresholdEdit.setText(str(settings.value('network/Threshold',0.9)))
         networkLayout.addRow(QLabel('Similarity threshold:'),self.thresholdEdit)
-        
-        
+
+
         networkWidget = QWidget()
         networkWidget.setLayout(networkLayout)
-        
-        
+
+
         tabWidget.addTab(networkWidget, 'Network')
-        
-        
+
+
         #Similarity
         simLayout = QVBoxLayout()
-        
+
         envLayout = QFormLayout()
         self.bandEdit = QLineEdit()
         self.bandEdit.setText(str(settings.value('envelopes/NumBands',4)))
@@ -151,57 +161,57 @@ class PreferencesDialog(QDialog):
         envLayout.addRow(QLabel('Gammatone:'),self.gammatoneCheck)
         self.windowCheck = QCheckBox()
         if self.settings.value('envelopes/Windowed',False):
-            self.gammatoneCheck.setChecked(True)
+            self.windowCheck.setChecked(True)
         envLayout.addRow(QLabel('Windowed:'),self.windowCheck)
-        
-        
+
+
         envWidget = QGroupBox('Amplitude envelopes')
         envWidget.setLayout(envLayout)
-        
+
         simLayout.addWidget(envWidget)
-        
+
         mfccLayout = QFormLayout()
         self.numCCEdit = QLineEdit()
         self.numCCEdit.setText(str(settings.value('mfcc/NumCC',20)))
         mfccLayout.addRow(QLabel('Number of coefficents:'),self.numCCEdit)
-        
+
         mfccWidget = QGroupBox('MFCC')
         mfccWidget.setLayout(mfccLayout)
-        
+
         simLayout.addWidget(mfccWidget)
-        
+
         simWidget = QWidget()
         simWidget.setLayout(simLayout)
-        
+
         tabWidget.addTab(simWidget,'Representations')
-        
+
 
         layout = QVBoxLayout()
         layout.addWidget(tabWidget)
-        
+
         #Accept cancel
         self.acceptButton = QPushButton('Ok')
         self.cancelButton = QPushButton('Cancel')
-        
+
         self.acceptButton.clicked.connect(self.accept)
         self.cancelButton.clicked.connect(self.reject)
-        
+
         hbox = QHBoxLayout()
         hbox.addWidget(self.acceptButton)
         hbox.addWidget(self.cancelButton)
         ac = QWidget()
         ac.setLayout(hbox)
         layout.addWidget(ac)
-        
+
         self.setLayout( layout )
-        
+
     def accept(self):
-        
+
         self.settings.setValue('general/WinLen',float(self.winLenEdit.text()))
         self.settings.setValue('general/TimeStep',float(self.timeStepEdit.text()))
         self.settings.setValue('general/MinFreq',int(self.minFreqEdit.text()))
         self.settings.setValue('general/MaxFreq',int(self.maxFreqEdit.text()))
-        
+
         if self.mfccRadio.isChecked():
             rep = 'mfcc'
         elif self.mhecRadio.isChecked():
@@ -211,10 +221,10 @@ class PreferencesDialog(QDialog):
         elif self.formantRadio.isChecked():
             rep = 'formant'
         else:
-            rep = 'envelope'
-            
+            rep = 'envelopes'
+
         self.settings.setValue('network/Representation',rep)
-        
+
         if self.ccRadio.isChecked():
             match = 'xcorr'
         elif self.dctRadio.isChecked():
@@ -222,23 +232,27 @@ class PreferencesDialog(QDialog):
         else:
             match = 'dtw'
         self.settings.setValue('network/MatchAlgorithm',match)
-        
+
         if self.completeRadio.isChecked():
             clust = 'complete'
         elif self.thresholdRadio.isChecked():
             clust = 'threshold'
-        else:
-            clust = 'incremental'
+        elif self.apRadio.isChecked():
+            clust = 'affinity'
+        elif self.scRadio.isChecked():
+            clust = 'spectral'
         self.settings.setValue('network/ClusterAlgorithm',clust)
+
+        self.settings.setValue('network/OneCluster',int(self.oneClusterCheck.isChecked()))
         self.settings.setValue('network/Threshold',float(self.thresholdEdit.text()))
-        
-        
+
+
         self.settings.setValue('envelopes/NumBands',int(self.bandEdit.text()))
         self.settings.setValue('envelopes/Gammatone',int(self.gammatoneCheck.isChecked()))
         self.settings.setValue('envelopes/Windowed',int(self.windowCheck.isChecked()))
-        
+
         self.settings.setValue('mfcc/NumCC',int(self.numCCEdit.text()))
-        
+
         QDialog.accept(self)
 
 class MainWindow(QMainWindow):
@@ -252,6 +266,8 @@ class MainWindow(QMainWindow):
         self.resize(self.settings.value('size', QSize(270, 225)))
         self.move(self.settings.value('pos', QPoint(50, 50)))
         self.tokenTable = TableWidget(self)
+        font = QFont("Courier New", 14)
+        self.tokenTable.setFont(font)
         self.graphWidget = NetworkWidget(parent=self)
         self.wrapper = QWidget()
         layout = QHBoxLayout(self.wrapper)
@@ -267,14 +283,18 @@ class MainWindow(QMainWindow):
         self.createToolBars()
         self.createStatusBar()
         self.createDockWindows()
-        
+
         self.loadWordTokens()
 
     def createActions(self):
 
-        self.createNetworkAct = QAction( "&Create network from folder",
+        self.createNetworkWavAct = QAction( "&Create network from folder",
                 self, shortcut=QKeySequence.Open,
-                statusTip="Create network from folder", triggered=self.createNetwork)
+                statusTip="Create network from folder", triggered=self.createNetworkWav)
+
+        self.createNetworkPickleAct = QAction( "Create network from pickled objects",
+                self,
+                statusTip="Create network from folder", triggered=self.createNetworkPickle)
 
         self.editPreferencesAct = QAction( "&Preferences...",
                 self,
@@ -303,24 +323,36 @@ class MainWindow(QMainWindow):
                 statusTip="Show the application's About box",
                 triggered=self.about)
 
-    def loadWordTokens(self,full_reset=False):
+    def loadWordTokens(self,full_reset=False,wav=True):
         self.graph = Graph()
-        self.graph.loadData(self.settings)
+        if wav:
+            self.graph.loadDataFromWav(self.settings,)
+        else:
+            self.graph.loadDataFromPickles(self.settings)
         graphSelectionModel = QItemSelectionModel(self.graph)
         self.tokenTable.setModel(self.graph)
         self.tokenTable.setSelectionModel(graphSelectionModel)
         self.tokenTable.selectionModel().selectionChanged.connect(self.selectTableToken)
+        self.tokenTable.resizeColumnsToContents()
         self.graphWidget.setModel(self.tokenTable.model())
         self.graphWidget.setSelectionModel(graphSelectionModel)
         self.graphWidget.selectionModel().selectionChanged.connect(self.selectGraphToken)
 
-    def createNetwork(self):
+    def createNetworkWav(self):
         token_path = QFileDialog.getExistingDirectory(self,
                 "Choose a directory")
         if not token_path:
             return
         self.settings.setValue('path',token_path)
-        self.loadWordTokens()
+        self.loadWordTokens(wav=True)
+
+    def createNetworkPickle(self):
+        token_path = QFileDialog.getExistingDirectory(self,
+                "Choose a directory")
+        if not token_path:
+            return
+        self.settings.setValue('path',token_path)
+        self.loadWordTokens(wav=False)
 
     def about(self):
         QMessageBox.about(self, "About Exemplar Network Explorer",
@@ -336,7 +368,8 @@ class MainWindow(QMainWindow):
 
     def createMenus(self):
         self.fileMenu = self.menuBar().addMenu("&File")
-        self.fileMenu.addAction(self.createNetworkAct)
+        self.fileMenu.addAction(self.createNetworkWavAct)
+        #self.fileMenu.addAction(self.createNetworkPickleAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.quitAct)
 
@@ -359,9 +392,8 @@ class MainWindow(QMainWindow):
             return
 
         selectedInd = selected[0].row()
-        wavfile = self.tokenTable.model().data(selected[0])
-        token_path = self.settings.value('path','')
-        self.specgramWindow.plot_specgram(os.path.join(token_path,wavfile))
+        node = self.graph[selectedInd]
+        self.specgramWindow.plot_specgram(node['sound'].fileName())
 
 
 
@@ -375,12 +407,9 @@ class MainWindow(QMainWindow):
         if len(selected) > 1:
             return
 
-        rep = self.settings.value('network/Representation','envelope')
         selectedInd = selected[0].row()
-        for n in self.graph.g.nodes_iter(data=True):
-            if n[0] == selectedInd:
-                self.envelopeWindow.plot_envelopes(n[1]['acoustics'][rep])
-                break
+        node = self.graph[selectedInd]
+        self.envelopeWindow.plot_envelopes(node['representation'])
 
     def similarity(self):
         selected = self.tokenTable.selectionModel().selectedRows()
@@ -389,18 +418,16 @@ class MainWindow(QMainWindow):
 
         selectedIndOne = selected[0].row()
         selectedIndTwo = selected[1].row()
-        envsOne = []
-        envsTwo = []
-        rep = self.settings.value('network/Representation','envelope')
-        for n in self.graph.g.nodes_iter(data=True):
-            if n[0] == selectedIndOne:
-                envsOne = n[1]['acoustics'][rep]
-            elif n[0] == selectedIndTwo:
-                envsTwo = n[1]['acoustics'][rep]
-        self.distanceWindow.plot_dist_mat(envsOne,envsTwo)
+
+        repOne = self.graph[selectedIndOne]['representation']
+        repTwo = self.graph[selectedIndTwo]['representation']
+        self.distanceWindow.plot_dist_mat(repOne,repTwo)
 
     def playfile(self):
-        return
+        selected = self.tokenTable.selectionModel().selectedRows()
+        ind = selected[0].row()
+        self.graph[ind]['sound'].play()
+
 
     def createToolBars(self):
         self.fileToolBar = self.addToolBar("Details")
@@ -459,15 +486,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue('pos', self.pos())
         e.accept()
 
-
-if __name__ == '__main__':
-
-    import sys
-
-    app = QApplication(sys.argv)
-    qsrand(QTime(0,0,0).secsTo(QTime.currentTime()))
-
-    main = MainWindow()
-    main.show()
-
-    sys.exit(app.exec_())
+def dependencies_for_myprogram():
+    from scipy.sparse.csgraph import _validation
+    from scipy.special import _ufuncs_cxx
+    from matplotlib.backends import backend_tkagg

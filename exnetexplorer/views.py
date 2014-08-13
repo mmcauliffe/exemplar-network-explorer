@@ -5,6 +5,7 @@ import os
 import networkx as nx
 import numpy
 import csv
+from collections import Counter
 
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
         Qt, QTime,QSettings,QSize,QPoint)
@@ -14,26 +15,62 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,
         QTableView,QAbstractItemView, QMenu)
 
-from models import Graph
+from exnetexplorer.models import Graph
 
 class TableWidget(QTableView):
     def __init__(self,parent=None):
         super(TableWidget, self).__init__(parent=parent)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.popup)
-        
+        header = self.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect( self.showHeaderMenu )
+
+    def showHeaderMenu( self, pos ):
+        header = self.horizontalHeader()
+        column = header.logicalIndexAt(pos.x())
+
+        filterAction = QAction(self)
+        filterAction.setText('Filter column')
+        filterAction.triggered.connect(lambda: self.filterColumn(self.indexAt(pos)))
+        symbolAction = QAction(self)
+        symbolAction.setText('Symbol')
+        symbolAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'symbol'))
+        colourAction = QAction(self)
+        colourAction.setText('Colour')
+        colourAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'colour'))
+        # show menu about the column
+        menu = QMenu(self)
+        displayMenu = menu.addMenu('Change graph display')
+        displayMenu.addAction(symbolAction)
+        displayMenu.addAction(colourAction)
+        menu.addAction(filterAction)
+
+        menu.popup(header.mapToGlobal(pos))
+
+    def filterColumn(self,index):
+        print(index)
+        column = self.columns[index.column()]
+
+    def changeColumnDisplay(self, index, display):
+        print(index)
+        column = self.columns[index.column()]
+        c = Counter()
+        if display == 'symbol':
+            default = 'o'
+        elif display == 'colour':
+            default = 'blue'
+
+
     def popup(self,pos):
-        print(self.model().data(self.indexAt(pos)))
-        print(self.indexAt(pos))
-        print(self.indexAt(pos).row())
         menu = QMenu()
-        
+
         saveRepAction = QAction(self)
         saveRepAction.setText('Save representation...')
         saveRepAction.triggered.connect(lambda: self.saveRep(self.indexAt(pos)))
         menu.addAction(saveRepAction)
         action = menu.exec_(self.mapToGlobal(pos))
-    
+
     def saveRep(self,index):
         #dialog = QFileDialog(self)
         #dialog.setFileMode(QFileDialog.AnyFile)
@@ -45,13 +82,13 @@ class TableWidget(QTableView):
         gInd = index.row()
         name = self.model().data(index)
         filename,filt = QFileDialog.getSaveFileName(self,"Save representation",os.path.join(os.getcwd(),name.replace('.wav','.txt')),"Text files (*.txt)")
-        
+
         rep = self.model().rep
         for n in self.model().g.nodes_iter(data=True):
             if n[0] == gInd:
                 rep = n[1]['acoustics'][rep]
                 break
-        
+
         time_step = self.model().time_step
         num_frames,num_bands = rep.shape
         with open(filename,'w') as f:
@@ -137,13 +174,15 @@ class GraphWidget(QGraphicsView):
         edges = model.g.edges(data=True)
         for e in edges:
             scene.addItem(Edge(nodeItems[e[0]],nodeItems[e[1]],e[2]['weight']))
-        pos = nx.spring_layout(model.g)
-        r = 800
-        m = -400
+
+        seed = numpy.random.RandomState(seed=3)
+        mds = manifold.MDS(n_components=2, eps=1e-9, random_state=seed,
+                   dissimilarity="precomputed", n_jobs=4)
+        pos = mds.fit(-1 * model.simMat).embedding_
+        clf = PCA(n_components=2)
+        pos = clf.fit_transform(pos)
         for i,n in enumerate(nodeItems):
-            x,y = pos[nodes[i][0]]
-            x = r*x + m
-            y = r*y + m
+            x,y = pos[nodes[i][0],0],pos[nodes[i][0],1]
             n.setPos(x,y)
 
     def model(self):

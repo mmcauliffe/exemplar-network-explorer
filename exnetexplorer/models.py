@@ -1,24 +1,30 @@
 import math
-from linghelper.phonetics.representations.amplitude_envelopes import to_envelopes
-from linghelper.phonetics.representations.prosody import to_pitch,to_intensity,to_prosody
-from linghelper.phonetics.representations.mfcc import to_mfcc
-from linghelper.phonetics.representations.mhec import to_mhec
-from linghelper.distance.dtw import dtw_distance
-from linghelper.distance.dct import dct_distance
-from linghelper.distance.xcorr import xcorr_distance
+from acousticsim.main import analyze_directory
 
+import multiprocessing
+from functools import partial
 
 import os
 import networkx as nx
 import numpy
 import scipy.signal
+import pickle
+
+
+from sklearn.cluster import AffinityPropagation
+from sklearn import metrics
+from sklearn import manifold
+from sklearn.decomposition import PCA
 
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
         Qt, QTime,QSettings,QSize,QPoint,QAbstractTableModel)
 from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainter,
         QPainterPath, QPen, QPolygonF, QRadialGradient, QApplication, QGraphicsItem, QGraphicsScene,
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget,
-        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog)
+        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,
+        QSound)
+
+
 
 class Graph(QAbstractTableModel):
     def __init__(self,parent=None):
@@ -26,105 +32,80 @@ class Graph(QAbstractTableModel):
         self.g = nx.Graph()
         self.columns = []
         self.time_step = 0
-        self.rep = ''
 
-    def loadData(self,settings):
+    def loadDataFromWav(self,settings):
         self.g = nx.Graph()
         token_path = settings.value('path','')
         if not os.path.exists(token_path):
             token_path = ''
         if not token_path:
             return
-        rep = settings.value('network/Representation','envelope')
-        files = os.listdir(token_path)
-        nodes = []
-        ind = 0
-        self.rep = rep
-        self.freq_lims = (int(settings.value('general/MinFreq',80)),int(settings.value('general/MaxFreq',7800)))
-        self.win_len = float(settings.value('general/WindowLength',0.015))
-        self.time_step = float(settings.value('general/TimeStep',0.005))
-        if rep == 'envelope':
-            self.time_step = 1/120
-            num_bands = int(settings.value('envelopes/NumBands',4))
-            erb = settings.value('envelopes/ERB',False)
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                env = to_envelopes(os.path.join(token_path,f),num_bands,self.freq_lims,erb)
 
-                nodes.append((ind,{'label':f,'acoustics':{rep:env}}))
-                ind += 1
+        rep = settings.value('network/Representation','mfcc')
+        if rep == 'envelopes':
+            num_filters = int(settings.value('envelopes/NumBands',8))
         elif rep == 'mfcc':
-            numCC = int(settings.value('mfcc/NumCC',20))
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                mfcc = to_mfcc(os.path.join(token_path,f),self.freq_lims,numCC,self.win_len,self.time_step)
-                nodes.append((ind,{'label':f,'acoustics':{rep:mfcc}}))
-                ind += 1
-        elif rep == 'mhec':
-            numCC = int(settings.value('mhec/NumCC',12))
-            numBands = int(settings.value('mhec/NumBands',48))
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                mhec = to_mhec(os.path.join(token_path,f),numCC,numBands,self.freq_lims,self.win_len,self.time_step)
-                nodes.append((ind,{'label':f,'acoustics':{rep:mhec}}))
-                ind += 1
-        elif rep == 'prosody':
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                prosody = to_prosody(os.path.join(token_path,f),self.time_step)
-                nodes.append((ind,{'label':f,'acoustics':{rep:prosody}}))
-                ind += 1
-        else:
-            return
+            num_filters = int(settings.value('mfcc/NumFilters',26))
+
+        kwarg_dict = {'rep': rep,
+                    'freq_lims': (int(settings.value('general/MinFreq',80)),int(settings.value('general/MaxFreq',7800))),
+                    'win_len': float(settings.value('general/WindowLength',0.025)),
+                    'time_step': float(settings.value('general/TimeStep',0.01)),
+                    'num_coeffs': int(settings.value('mfcc/NumCC',20)),
+                    'num_filters': num_filters,
+                    'use_power': bool(settings.value('general/UsePower',False)),
+                    'num_cores': 4,
+                    'return_rep': True}
+        scores,reps = analyze_directory(token_path,**kwarg_dict)
+        lookup = {}
+        nodes = []
+        for i,r in enumerate(sorted(reps.keys())):
+            lookup[r] = i
+            nodes.append((i,
+                            {'label':r,
+                            'representation':reps[r],
+                            'sound':QSound(os.path.join(token_path,r))}))
         self.g.add_nodes_from(nodes)
-        clusterAlgorithm = settings.value('network/ClusterAlgorithm','complete')
-        matchAlgorithm = settings.value('envelopes/MatchAlgorithm','xcorr')
-        if matchAlgorithm == 'xcorr':
-            dist_func = xcorr_distance
-        elif matchAlgorithm == 'dtw':
-            dist_func = dtw_distance
-        elif matchAlgorithm == 'dct':
-            dist_func = dct_distance
-        edges = []
+
+        clusterAlgorithm = settings.value('network/clusterAlgorithm','complete')
+        oneCluster = bool(settings.value('network/OneCluster',1))
+        self.simMat = numpy.zeros((len(nodes),len(nodes)))
+        for k,v in scores.items():
+            indOne = lookup[k[0]]
+            indTwo = lookup[k[1]]
+            self.simMat[indOne,indTwo] = v
+            self.simMat[indTwo,indOne] = v
         if clusterAlgorithm == 'incremental':
             pass
-        elif clusterAlgorithm == 'affinitypropagation':
-            from sklearn.cluster import AffinityPropagation
-            simMat = zeroes(len(nodes))
-            for i in range(len(nodes)-1):
-                repOne = nodes[i][1]['acoustics'][rep]
-                for j in range(i+1, len(nodes)):
-                    repTwo = nodes[j][1]['acoustics'][rep]
-                    
-                    sim = -1 * dist_func(repOne,repTwo)
-                    simMat[i,j] = sim
-            af = AffinityPropagation(affinity = 'precomputed').fit(simMat)
-            for i in range(len(nodes)-1):
-                for j in range(i+1, len(nodes)):
-                    pass
-        else:
-            threshold = float(settings.value('network/Threshold',0.9))
-            for i in range(len(nodes)-1):
-                repOne = nodes[i][1]['acoustics'][rep]
-                for j in range(i+1,len(nodes)):
-                    repTwo = nodes[j][1]['acoustics'][rep]
-                    
-                    sim = 1/dist_func(repOne,repTwo)
-                    if clusterAlgorithm == 'threshold' and sim < threshold:
-                        continue
-                    edges.append((nodes[i][0],nodes[j][0],sim))
+        elif clusterAlgorithm == 'affinity':
+            edges = []
+            if oneCluster:
+                pref = numpy.min(self.simMat)
+            else:
+                pref = None
+            af = AffinityPropagation(affinity = 'precomputed',preference=pref).fit(self.simMat)
 
+            cluster_centers_indices = af.cluster_centers_indices_
+            n_clusters_ = len(cluster_centers_indices)
+            labels = af.labels_
+
+            for k in range(n_clusters_):
+                clust = cluster_centers_indices[k]
+                class_members = labels == k
+
+                for i, x in enumerate(class_members):
+                    if not x:
+                        continue
+                    n = nodes[i]
+                    edges.append((clust,n[0],self.simMat[n[0],clust]))
+        else:
+            edges = [(lookup[k[0]],lookup[k[1]],v) for k,v in scores.items()]
         self.g.add_weighted_edges_from(edges)
         node = next(self.g.nodes_iter(data=True))
         if node is not None:
 
             self.columns = [x for x in node[1].keys()
-                        if not isinstance(node[1][x],dict)
-                        and not isinstance(node[1][x],list)]
+                        if x not in ('representation','sound')]
         else:
             self.columns = []
 
@@ -137,14 +118,25 @@ class Graph(QAbstractTableModel):
         return len(n[1].keys()) + 1
 
     def data(self, index, role=None):
+        if not index.isValid():
+            return None
+        elif role != Qt.DisplayRole:
+            return None
         row = index.row()
         col = index.column()
         node = self.g.node[row]
         data = node[self.columns[col]]
         return data
 
-    #def headerData(self):
-    #   pass
+    def headerData(self, col, orientation, role):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return self.columns[col]
+        return None
+
+    def __getitem__(self,ind):
+        if isinstance(ind,int):
+            return self.g.node[ind]
+        #elif isinstance(ind,str):
 
     #def setData(self):
     #    pass
