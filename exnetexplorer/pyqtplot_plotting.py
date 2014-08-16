@@ -2,15 +2,16 @@
 from pyqtgraph.Qt import QtGui, QtCore
 import numpy as np
 import pyqtgraph as pg
+pg.setConfigOption('background', 'w')
+pg.setConfigOption('foreground', 'k')
 import networkx as nx
 
 
+from acousticsim.representations.helper import preproc
 from acousticsim.distance.dtw import generate_distance_matrix
 
 import matplotlib.mlab as mlab
 
-from scipy.signal import resample
-from scipy.io import wavfile
 from sklearn import manifold
 from sklearn.decomposition import PCA
 
@@ -21,7 +22,7 @@ class Heatmap(pg.ImageItem):
             self.image = image
         else:
             self.image = np.zeros((10, 10))
-        pg.ImageItem.__init__(self, self.image)
+        pg.ImageItem.__init__(self, self.image,levels=[1,0])
 
     def updateImage(self, image):
         self.image = image
@@ -38,36 +39,53 @@ class SpecgramWidget(pg.PlotWidget):
         self.setLabel('bottom', 'Time', units='s')
 
 
-    def plot_specgram(self,token_path):
-        newSr = 16000
-        sr, sig = wavfile.read(token_path)
-        t = len(sig)/sr
-        numsamp = t * newSr
-        proc = resample(sig,numsamp)
-
-        Pxx, freq, t = mlab.specgram(proc,Fs = newSr)
+    def plot_specgram(self,token_path, win_len= 0.025, time_step = 0.01):
+        sr, proc = preproc(token_path)
+        nwin = int(sr * win_len)
+        nstep = int(sr * time_step)
+        Pxx, freq, t = mlab.specgram(proc, NFFT=nwin,Fs = sr,noverlap = nstep)
         Z = 10. * np.log10(Pxx)
         #self.setLimits(xMin = 0, xMax = len(t),yMin=0,yMax=len(freq))
         self.setXRange(0, len(t))
         self.setYRange(0, len(freq))
-        self.getAxis('left').setScale((newSr/2)/len(freq))
-        self.heatmap.setImage(Z.T,opacity=0.7)
+        self.getAxis('left').setScale((sr/2)/len(freq))
+        self.heatmap.setImage(Z.T,levels=[np.max(Z.T),np.min(Z.T)],opacity=0.7)
         self.show()
         self.update()
 
-#class NetworkGraph():
-#    def __init__(self):
-#        pg.GraphItem.__init__(self)
+class NetworkScatter(pg.ScatterPlotItem):
+    def pointsAt(self, pos):
+        x = pos.x()
+        y = pos.y()
+        pw = self.pixelWidth()
+        ph = self.pixelHeight()
+        pts = []
+        for i,s in enumerate(self.points()):
+            sp = s.pos()
+            ss = s.size()
+            sx = sp.x()
+            sy = sp.y()
+            s2x = s2y = ss * 0.5
+            if self.opts['pxMode']:
+                s2x *= pw
+                s2y *= ph
+            if x > sx-s2x and x < sx+s2x and y > sy-s2y and y < sy+s2y:
+                pts.append((i,s))
+        return pts[::-1]
 
-    #def mouseClickEvent(self,event):
-        #print(event)
-        #pos = event.pos()
-        #print(pos)
-        #pts = self.scatter.pointsAt(pos)
-        #print(pts)
-        #if len(pts) == 0:
-            #event.ignore()
-            #return
+
+class NetworkGraph(pg.GraphItem):
+    def __init__(self, **kwds):
+        pg.GraphItem.__init__(self, **kwds)
+        self.scatter = NetworkScatter()
+        self.scatter.setParentItem(self)
+        self.adjacency = None
+        self.pos = None
+        self.picture = None
+        self.pen = 'default'
+        self.setData(**kwds)
+
+
 
 
 class NetworkWidget(pg.GraphicsWindow):
@@ -76,17 +94,21 @@ class NetworkWidget(pg.GraphicsWindow):
         self.graphModel = None
         self.selectionGraphModel = None
         self.v = self.addViewBox()
-        self.g = pg.GraphItem()
+        self.g = NetworkGraph()
         self.v.addItem(self.g)
         self.pos = None
         self.adj = None
         self.symbols = None
+        self.symbolPen = pg.mkPen(color=pg.mkColor('k'))
         self.g.scatter.sigClicked.connect(self.clicked)
 
     def clicked(self,scatter,pts):
-        print(self.scatter)
-        print(self.scatter.ptsClicked)
-        print(pts)
+
+        self.symbols = np.array(['o']*len(self.graphModel.g))
+        for p in pts:
+            ind = self.graphModel.createIndex(p[0],0)
+            self.selectionModel().select(ind,QtGui.QItemSelectionModel.SelectCurrent)
+            self.symbols[p[0]] = '+'
 
     def setModel(self,model):
         self.graphModel = model
@@ -125,7 +147,7 @@ class NetworkWidget(pg.GraphicsWindow):
 
     def update(self):
         if len(self.pos) > 0:
-            self.g.setData(pos=self.pos,adj=self.adj,symbol = self.symbols)
+            self.g.setData(pos=self.pos,adj=self.adj,symbol = self.symbols,symbolPen= self.symbolPen)
         #r = 800
         #m = -400
         #for i,n in enumerate(nodeItems):
@@ -137,15 +159,14 @@ class NetworkWidget(pg.GraphicsWindow):
 class EnvelopeWidget(pg.PlotWidget):
     def __init__(self,parent=None):
         pg.PlotWidget.__init__(self,parent=parent,name = 'Envelopes')
-        self.setLabel('left', 'Amplitude')
+        self.heatmap = Heatmap()
+        self.addItem(self.heatmap)
         self.setLabel('bottom', 'Time', units='s')
 
-    def plot_envelopes(self,envs):
-        self.clear()
-        num_bands = envs.shape[1]
-        for i in range(num_bands):
-            self.plot(envs[:,i])
-        self.getAxis('bottom').setScale(1/120)
+    def plot_envelopes(self,rep):
+        self.setXRange(0, rep.shape[0])
+        self.setYRange(0, rep.shape[1])
+        self.heatmap.setImage(rep,levels=[np.max(rep),np.min(rep)],opacity=0.7)
         self.show()
         self.update()
 
@@ -163,7 +184,7 @@ class DistanceWidget(pg.PlotWidget):
         distMat = generate_distance_matrix(source,target)
         self.setXRange(0, source.shape[0])
         self.setYRange(0, target.shape[0])
-        self.heatmap.setImage(distMat,autoLevels=[0,1],opacity=0.7)
+        self.heatmap.setImage(distMat,levels=[np.max(distMat),np.min(distMat)],opacity=0.7)
         self.show()
         self.update()
 

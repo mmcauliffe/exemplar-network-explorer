@@ -443,6 +443,7 @@ class MainWindow(QMainWindow):
             self.envelope()
         elif len(selected) == 2:
             self.similarity()
+        self.tokenTable.viewport().update()
 
     def selectTableToken(self):
         self.graphWidget.setSelectionModel(self.tokenTable.selectionModel())
