@@ -1,6 +1,8 @@
 
 
 import sys
+import os
+from site import getsitepackages
 from cx_Freeze import setup, Executable
 
 def readme():
@@ -27,7 +29,19 @@ shortcut_table = [
      )
     ]
 
-build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', 'tcl'],
+build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', 'tcl','matplotlib'],
+                    "include_files": [(os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csr.pyd'),'_csr.pyd'),
+                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csc.pyd'),'_csc.pyd'),
+                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_coo.pyd'),'_coo.pyd'),
+                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_dia.pyd'),'_dia.pyd'),
+                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_bsr.pyd'),'_bsr.pyd'),
+                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csgraph.pyd'),'_csgraph.pyd'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/libifcoremd.dll'),'libifcoremd.dll'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/libifportmd.dll'),'libifportmd.dll'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/libiompstubs5md.dll'),'libiompstubs5md.dll'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/libmmd.dll'),'libmmd.dll'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/svml_dispmd.dll'),'svml_dispmd.dll'),
+                                        (os.path.join(getsitepackages()[1],'numpy/core/tbb.dll'),'tbb.dll')],
                     "includes": [
                                   "numpy.lib.format",
                                   "numpy.linalg",
@@ -41,15 +55,13 @@ build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', '
                                   "scipy.special",
                                   "scipy.special._ufuncs_cxx",
                                   "scipy.sparse.csgraph._validation",
-                                  "matplotlib.pyplot",
-                                  "matplotlib.backends",
-                                  "matplotlib.backends.backend_qt4agg",
                                   'sklearn.utils.sparsetools._graph_validation',
                                   'sklearn.neighbors.typedefs',
                                   'sklearn.utils.lgamma',
                                   'sklearn.utils.weight_vector',
                                   'pyqtgraph.graphicsItems.GraphItem',
-                                  "sys"]}
+                                  "sys",
+                                  "acousticsim"]}
 
 msi_data = {"Shortcut": shortcut_table}
 
@@ -60,10 +72,10 @@ bdist_msi_options = {
         'data':msi_data}
 
 base = None
-if sys.platform == "win32":
-    base = "Win32GUI"
+#if sys.platform == "win32":
+#    base = "Win32GUI"
 
-setup(name='Phonological CorpusTools',
+setup(name='Exemplar Network Explorer',
       version='0.15',
       description='',
       long_description='',

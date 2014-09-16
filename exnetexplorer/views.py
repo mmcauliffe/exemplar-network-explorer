@@ -1,25 +1,35 @@
-import math
 
 
 import os
-import networkx as nx
-import numpy
 import csv
 from collections import Counter
 
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
-        Qt, QTime,QSettings,QSize,QPoint)
+        Qt, QTime,QSettings,QSize,QPoint, Signal)
 from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainter,
         QPainterPath, QPen, QPolygonF, QRadialGradient, QApplication, QGraphicsItem, QGraphicsScene,
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget,
         QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,
-        QTableView,QAbstractItemView, QMenu)
+        QTableView,QAbstractItemView, QMenu, QItemSelectionModel, QItemSelection)
 
-from exnetexplorer.models import Graph
+from numpy import zeros,array
+
+import pyqtgraph as pg
+pg.setConfigOption('background', 'w')
+pg.setConfigOption('foreground', 'k')
+
+from acousticsim.distance.dtw import generate_distance_matrix
+from acousticsim.representations import to_specgram
 
 class TableWidget(QTableView):
     def __init__(self,parent=None):
         super(TableWidget, self).__init__(parent=parent)
+
+        self.verticalHeader().hide()
+
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.popup)
         header = self.horizontalHeader()
@@ -37,29 +47,27 @@ class TableWidget(QTableView):
         symbolAction.setText('Symbol')
         symbolAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'symbol'))
         colourAction = QAction(self)
-        colourAction.setText('Colour')
-        colourAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'colour'))
+        colourAction.setText('Color')
+        colourAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'brush'))
+        sizeAction = QAction(self)
+        sizeAction.setText('Size')
+        sizeAction.triggered.connect(lambda: self.changeColumnDisplay(self.indexAt(pos),'size'))
         # show menu about the column
         menu = QMenu(self)
         displayMenu = menu.addMenu('Change graph display')
         displayMenu.addAction(symbolAction)
         displayMenu.addAction(colourAction)
+        displayMenu.addAction(sizeAction)
         menu.addAction(filterAction)
 
         menu.popup(header.mapToGlobal(pos))
 
     def filterColumn(self,index):
-        print(index)
         column = self.columns[index.column()]
 
     def changeColumnDisplay(self, index, display):
-        print(index)
-        column = self.columns[index.column()]
-        c = Counter()
-        if display == 'symbol':
-            default = 'o'
-        elif display == 'colour':
-            default = 'blue'
+        column = self.model().columns[index.column()]
+        self.model().changeFactorDisplay(column,display)
 
 
     def popup(self,pos):
@@ -93,419 +101,240 @@ class TableWidget(QTableView):
         num_frames,num_bands = rep.shape
         with open(filename,'w') as f:
             writer = csv.writer(f,delimiter='\t')
-            writer.writerow(['Time','Band','Amplitude'])
+            writer.writerow(['Time','Band','Value'])
             for i in range(num_frames):
                 for j in range(num_bands):
                     writer.writerow([(i+1)*time_step,j+1,rep[i,j]])
         #if dialog.exec_():
         #    fileNames = dialog.selectedFiles()
 
-class NetworkGraphicsScene(QGraphicsScene):
-    def __init__(self,parent=None):
-        super(NetworkGraphicsScene, self).__init__(parent=parent)
+class Heatmap(pg.ImageItem):
+    def __init__(self, image=None):
 
-class NetworkGraphicsView(QAbstractItemView):
-    def __init__(self,parent=None):
-        super(NetworkGraphicsView, self).__init__(parent=parent)
+        if image is not None:
+            self.image = image
+        else:
+            self.image = zeros((10, 10))
+        pg.ImageItem.__init__(self, self.image)
 
-        scene = NetworkGraphicsScene(self)
-        scene.setItemIndexMethod(QGraphicsScene.NoIndex)
-        scene.setSceneRect(-200, -200, 400, 400)
-        self.setScene(scene)
+    def updateImage(self, image):
+        self.image = image
+        self.render()
+        self.update()
+
+
+class SpecgramWidget(pg.PlotWidget):
+    def __init__(self,parent=None):
+        v = pg.ViewBox(enableMouse=False)
+        pg.PlotWidget.__init__(self,parent=parent,name = 'Spectrogram',viewBox=v,enableMenu=False)
+        self.heatmap = Heatmap()
+        self.addItem(self.heatmap)
+        self.setLabel('left', 'Frequency', units='Hz')
+        self.setLabel('bottom', 'Time', units='s')
+
+
+    def plot_specgram(self,token_path, win_len= 0.005, time_step = 0.01):
+        win_len= 0.005
+        spec,display_info = to_specgram(token_path,win_len,time_step,return_info=True)
+        num_samps, sr = display_info
+        dynamic_range = 70
+        spec[spec < spec.max()-dynamic_range] = spec.max()-dynamic_range
+        self.heatmap.setImage(spec,opacity=0.7,levels=[spec.max(),spec.min()])
+
+        self.show()
+        self.update()
+
+
+class EnvelopeWidget(pg.PlotWidget):
+    def __init__(self,parent=None):
+        v = pg.ViewBox(enableMouse=False)
+        pg.PlotWidget.__init__(self,parent=parent,name = 'Auditory representation',viewBox=v,enableMenu=False)
+        self.heatmap = Heatmap()
+        self.addItem(self.heatmap)
+        self.setLabel('bottom', 'Time', units='s')
+
+        def changed(obj, range):
+            print(range)
+        #self.sigRangeChanged.connect(changed)
+
+    def plot_envelopes(self,rep):
+        print(rep.shape)
+        self.setXRange(0, rep.shape[0])
+        self.setYRange(0, rep.shape[1])
+        self.heatmap.setImage(rep,levels=[rep.max(),rep.min()],opacity=0.7)
+        self.show()
+        self.update()
+
+class DistanceWidget(pg.PlotWidget):
+    def __init__(self,parent=None):
+        v = pg.ViewBox(enableMouse=False)
+        pg.PlotWidget.__init__(self,parent=parent,name = 'Distance matrix',viewBox=v,enableMenu=False)
+        self.heatmap = Heatmap()
+        self.addItem(self.heatmap)
+
+
+    def plot_dist_mat(self,source,target):
+
+        distMat = generate_distance_matrix(source,target)
+        self.setXRange(0, source.shape[0])
+        self.setYRange(0, target.shape[0])
+        self.heatmap.setImage(distMat,levels=[distMat.max(),distMat.min()],opacity=0.7)
+        self.show()
+        self.update()
+
+class NetworkScatter(pg.ScatterPlotItem):
+    sigClicked = Signal(object, object) ## points, mode
+    def pointsAt(self, pos):
+        x = pos.x()
+        y = pos.y()
+        pw = self.pixelWidth()
+        ph = self.pixelHeight()
+        pts = []
+        for i,s in enumerate(self.points()):
+            sp = s.pos()
+            ss = s.size()
+            sx = sp.x()
+            sy = sp.y()
+            s2x = s2y = ss * 0.5
+            if self.opts['pxMode']:
+                s2x *= pw
+                s2y *= ph
+            if x > sx-s2x and x < sx+s2x and y > sy-s2y and y < sy+s2y:
+                pts.append((i,s))
+        return pts[::-1]
+
+    def mouseClickEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            pts = self.pointsAt(ev.pos())
+            if len(pts) > 0:
+                self.ptsClicked = pts
+                if ev.modifiers() in [Qt.ControlModifier,Qt.ShiftModifier]:
+
+                    self.sigClicked.emit(self.ptsClicked,True)
+                else:
+                    self.sigClicked.emit(self.ptsClicked,False)
+                ev.accept()
+            else:
+                #print "no spots"
+                ev.ignore()
+        else:
+            ev.ignore()
+
+
+class NetworkGraph(pg.GraphItem):
+    def __init__(self, **kwds):
+        pg.GraphicsObject.__init__(self)
+        self.scatter = NetworkScatter()
+        self.scatter.setParentItem(self)
+        self.adjacency = None
+        self.pos = None
+        self.picture = None
+        self.pen = 'default'
+        self.setData(**kwds)
+
+
+s_r = (7,50)
+h_r = (0,255 * 3)
+c_r = (0,255)
+symbols = ['o','s','t','d','+']
+
+class NetworkWidget(pg.GraphicsLayoutWidget):
+    def __init__(self,parent=None):
+        pg.GraphicsWindow.__init__(self,parent=parent)
+        self.graphModel = None
+        self.selectionGraphModel = None
+        self.v = self.addViewBox(enableMenu=False)
+        self.g = NetworkGraph()
+        self.v.addItem(self.g)
+        self.v.setMouseEnabled(x=False,y=False)
+        self.v.enableAutoRange('xy')
+        self.adj = None
+        self.symbolPen = pg.mkPen(color=pg.mkColor('k'))
+        self.g.scatter.sigClicked.connect(self.clicked)
+        self.spots = None
+
+    def clicked(self,pts,mode):
+
+        self.symbols = ['o']*len(self.graphModel.cluster_network)
+        if mode:
+            selectMode = QItemSelectionModel.Toggle
+        else:
+            selectMode = QItemSelectionModel.ClearAndSelect
+        for p in pts:
+            ind = self.graphModel.createIndex(p[0],0)
+            ind1 = self.graphModel.createIndex(p[0],self.model().columnCount())
+            selection = QItemSelection(ind,ind1)
+            self.selectionModel().select(selection,selectMode)
+            self.symbols[p[0]] = '+'
+
+    def get_defaults(self,*args):
+
+        if self.graphModel.cluster_network is None:
+            return
+        self.to_update()
+        #self.update_data()
 
     def setModel(self,model):
-        super(NetworkGraphicsView, self).setModel(model)
-        scene = self.scene()
-        scene.clear()
-        nodes = model.g.nodes(data=True)
-        for n in nodes:
-            node = Node(self,n[0],n[1]['label'])
-            scene.addItem(node)
-        nodeItems = [item for item in self.scene().items() if isinstance(item, Node)]
-        edges = model.g.edges(data=True)
-        for e in edges:
-            scene.addItem(Edge(nodeItems[e[0]],nodeItems[e[1]],e[2]['weight']))
-        pos = nx.spring_layout(model.g)
-        r = 800
-        m = -400
-        for i,n in enumerate(nodeItems):
-            x,y = pos[nodes[i][0]]
-            x = r*x + m
-            y = r*y + m
-            n.setPos(x,y)
-
-    def setScene(self,scene):
-        self.graphicsScene = scene
-
-    def scene(self):
-        return self.graphicsScene
-
-class GraphWidget(QGraphicsView):
-    def __init__(self,main):
-        super(GraphWidget, self).__init__()
-
-        self.main = main
-        self.timerId = 0
-
-        scene = QGraphicsScene(self)
-        scene.setItemIndexMethod(QGraphicsScene.NoIndex)
-        scene.setSceneRect(-200, -200, 400, 400)
-        self.setScene(scene)
-        self.setCacheMode(QGraphicsView.CacheBackground)
-        self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
-        self.setRenderHint(QPainter.Antialiasing)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorViewCenter)
-
-
-
-        self.scale(1.0, 1.0)
-        self.setMinimumSize(400, 400)
-
-    def setModel(self,model):
-        scene = self.scene()
-        scene.clear()
         self.graphModel = model
-        nodes = model.g.nodes(data=True)
-        for n in nodes:
-            node = Node(self,n[0],n[1]['label'])
-            scene.addItem(node)
-        nodeItems = [item for item in self.scene().items() if isinstance(item, Node)]
-        edges = model.g.edges(data=True)
-        for e in edges:
-            scene.addItem(Edge(nodeItems[e[0]],nodeItems[e[1]],e[2]['weight']))
+        self.graphModel.plotUpdate.connect(self.to_update)
+        self.get_defaults()
 
-        seed = numpy.random.RandomState(seed=3)
-        mds = manifold.MDS(n_components=2, eps=1e-9, random_state=seed,
-                   dissimilarity="precomputed", n_jobs=4)
-        pos = mds.fit(-1 * model.simMat).embedding_
-        clf = PCA(n_components=2)
-        pos = clf.fit_transform(pos)
-        for i,n in enumerate(nodeItems):
-            x,y = pos[nodes[i][0],0],pos[nodes[i][0],1]
-            n.setPos(x,y)
+
+    def setSelectionModel(self,selectionModel):
+        self.selectionGraphModel = selectionModel
+        selected = self.selectionModel().selectedRows()
+        if not selected:
+            return
+        self.symbols = ['o']*len(self.graphModel.cluster_network)
+        for i in selected:
+            self.symbols[i.row()] = '+'
+        self.update_data()
 
     def model(self):
         return self.graphModel
 
+    def selectionModel(self):
+        return self.selectionGraphModel
+
+    def to_update(self,obj=None):
+        self.spots,self.adj = self.graphModel.to_plot()
+        self.pos = []
+        for i,s in enumerate(self.spots):
+            for k,v in s.items():
+                if k == 'pos':
+                    self.pos.append(v)
+                elif k == 'symbol':
+                    if v is None:
+                        val = symbols[0]
+                    elif v[0] == 'factor':
+                        if v[1] > len(symbols):
+                            val = symbols[-1]
+                        else:
+                            val = symbols[v[1]]
+                    else:
+                        val = symbols[0]
+                    s[k] = val
+                elif k == 'size':
+                    if v is None:
+                        val = s_r[0]
+                    elif v[0] == 'factor':
+                        val = ((s_r[1] - s_r[0]) * (v[1]/v[2])) + s_r[0]
+                    else:
+                        val = ((s_r[1] - s_r[0]) * v[1]) + s_r[0]
+                    s[k] = val
+                elif k == 'brush':
+                    if v is None:
+                        val = pg.mkBrush('c')
+                    elif v[0] == 'factor':
+                        s[k] = pg.mkBrush(pg.intColor(v[1], hues = v[2]))
+                    else:
+                        s[k] = pg.mkBrush(0,0,((c_r[1] - c_r[0]) * v[1]) + c_r[0])
+            self.spots[i] = s
+        self.update_data()
+
+    def update_data(self):
+        if self.spots is not None and len(self.spots) > 0:
+            self.g.setData(pos = array(self.pos), spots=self.spots,adj=self.adj,
+                symbolPen= self.symbolPen)
+            #self.g._update()
 
-   # def itemMoved(self):
-   #     if not self.timerId:
-   #         self.timerId = self.startTimer(1000 / 25)
-
-    def keyPressEvent(self, event):
-        key = event.key()
-
-        #if key == Qt.Key_Up:
-        #    self.centerNode.moveBy(0, -20)
-        #elif key == Qt.Key_Down:
-        #    self.centerNode.moveBy(0, 20)
-        #elif key == Qt.Key_Left:
-        #    self.centerNode.moveBy(-20, 0)
-        #elif key == Qt.Key_Right:
-        #    self.centerNode.moveBy(20, 0)
-        if key == Qt.Key_Plus:
-            self.scaleView(1.2)
-        elif key == Qt.Key_Minus:
-            self.scaleView(1 / 1.2)
-        #elif key == Qt.Key_Space or key == Qt.Key_Enter:
-        #    for item in self.scene().items():
-        #        if isinstance(item, Node):
-        #            item.setPos(-150 + qrand() % 300, -150 + qrand() % 300)
-        else:
-            super(GraphWidget, self).keyPressEvent(event)
-
-    #def timerEvent(self, event):
-        #nodes = [item for item in self.scene().items() if isinstance(item, Node)]
-
-        ##for node in nodes:
-        ##    node.calculateForces()
-
-        #itemsMoved = False
-        #for node in nodes:
-            #if node.advance():
-                #itemsMoved = True
-
-        #if not itemsMoved:
-            #self.killTimer(self.timerId)
-            #self.timerId = 0
-
-    def wheelEvent(self, event):
-        self.scaleView(math.pow(2.0, event.delta() / 240.0))
-
-    #def drawBackground(self, painter, rect):
-        ## Shadow.
-        #sceneRect = self.sceneRect()
-        #rightShadow = QRectF(sceneRect.right(), sceneRect.top() + 5, 5,
-                #sceneRect.height())
-        #bottomShadow = QRectF(sceneRect.left() + 5, sceneRect.bottom(),
-                #sceneRect.width(), 5)
-        #if rightShadow.intersects(rect) or rightShadow.contains(rect):
-            #painter.fillRect(rightShadow, Qt.darkGray)
-        #if bottomShadow.intersects(rect) or bottomShadow.contains(rect):
-            #painter.fillRect(bottomShadow, Qt.darkGray)
-
-        ## Fill.
-        #gradient = QLinearGradient(sceneRect.topLeft(), sceneRect.bottomRight())
-        #gradient.setColorAt(0, Qt.white)
-        #gradient.setColorAt(1, Qt.lightGray)
-        #painter.fillRect(rect.intersected(sceneRect), QBrush(gradient))
-        #painter.setBrush(Qt.NoBrush)
-        #painter.drawRect(sceneRect)
-
-        ## Text.
-        #textRect = QRectF(sceneRect.left() + 4, sceneRect.top() + 4,
-                #sceneRect.width() - 4, sceneRect.height() - 4)
-        #message = "Click and drag the nodes around, and zoom with the " \
-                #"mouse wheel or the '+' and '-' keys"
-
-        #font = painter.font()
-        #font.setBold(True)
-        #font.setPointSize(14)
-        #painter.setFont(font)
-        #painter.setPen(Qt.lightGray)
-        #painter.drawText(textRect.translated(2, 2), message)
-        #painter.setPen(Qt.black)
-        #painter.drawText(textRect, message)
-
-    def scaleView(self, scaleFactor):
-        factor = self.transform().scale(scaleFactor, scaleFactor).mapRect(QRectF(0, 0, 1, 1)).width()
-
-        if factor < 0.07 or factor > 100:
-            return
-
-        self.scale(scaleFactor, scaleFactor)
-
-
-
-class Edge(QGraphicsItem):
-    Pi = math.pi
-    TwoPi = 2.0 * Pi
-
-    Type = QGraphicsItem.UserType + 2
-
-    def __init__(self, sourceNode, destNode, similarity):
-        super(Edge, self).__init__()
-
-        self.similarity = similarity
-
-        self.arrowSize = 10.0
-        self.sourcePoint = QPointF()
-        self.destPoint = QPointF()
-
-        #self.setAcceptedMouseButtons(Qt.NoButton)
-        self.setFlag(QGraphicsItem.ItemIsSelectable)
-        self.source = sourceNode
-        self.dest = destNode
-        self.source.addEdge(self)
-        self.dest.addEdge(self)
-        self.adjust()
-
-    def type(self):
-        return Edge.Type
-
-    def sourceNode(self):
-        return self.source
-
-    def setSourceNode(self, node):
-        self.source = node
-        self.adjust()
-
-    def destNode(self):
-        return self.dest
-
-    def setDestNode(self, node):
-        self.dest = node
-        self.adjust()
-
-    def adjust(self):
-        if not self.source or not self.dest:
-            return
-
-        line = QLineF(self.mapFromItem(self.source, 0, 0),
-                self.mapFromItem(self.dest, 0, 0))
-        length = line.length()
-
-        self.prepareGeometryChange()
-
-        if length > 20.0:
-            edgeOffset = QPointF((line.dx() * 10) / length,
-                    (line.dy() * 10) / length)
-
-            self.sourcePoint = line.p1() + edgeOffset
-            self.destPoint = line.p2() - edgeOffset
-        else:
-            self.sourcePoint = line.p1()
-            self.destPoint = line.p1()
-
-    def boundingRect(self):
-        if not self.source or not self.dest:
-            return QRectF()
-
-        penWidth = 1.0
-        extra = (penWidth + self.arrowSize) / 2.0
-
-        return QRectF(self.sourcePoint,
-                QSizeF(self.destPoint.x() - self.sourcePoint.x(),
-                        self.destPoint.y() - self.sourcePoint.y())).normalized().adjusted(-extra, -extra, extra, extra)
-
-    def paint(self, painter, option, widget):
-        if not self.source or not self.dest:
-            return
-
-        # Draw the line itself.
-        line = QLineF(self.sourcePoint, self.destPoint)
-
-        if line.length() == 0.0:
-            return
-
-        painter.setPen(QPen(Qt.black, 1, Qt.SolidLine, Qt.RoundCap,
-                Qt.RoundJoin))
-        painter.drawLine(line)
-
-        # Draw the arrows if there's enough room.
-        angle = math.acos(line.dx() / line.length())
-        if line.dy() >= 0:
-            angle = Edge.TwoPi - angle
-
-        #sourceArrowP1 = self.sourcePoint + QPointF(math.sin(angle + Edge.Pi / 3) * self.arrowSize,
-                                                          #math.cos(angle + Edge.Pi / 3) * self.arrowSize)
-        #sourceArrowP2 = self.sourcePoint + QPointF(math.sin(angle + Edge.Pi - Edge.Pi / 3) * self.arrowSize,
-                                                          #math.cos(angle + Edge.Pi - Edge.Pi / 3) * self.arrowSize);
-        #destArrowP1 = self.destPoint + QPointF(math.sin(angle - Edge.Pi / 3) * self.arrowSize,
-                                                      #math.cos(angle - Edge.Pi / 3) * self.arrowSize)
-        #destArrowP2 = self.destPoint + QPointF(math.sin(angle - Edge.Pi + Edge.Pi / 3) * self.arrowSize,
-                                                      #math.cos(angle - Edge.Pi + Edge.Pi / 3) * self.arrowSize)
-
-        #painter.setBrush(Qt.black)
-        #painter.drawPolygon(QPolygonF([line.p1(), sourceArrowP1, sourceArrowP2]))
-        #painter.drawPolygon(QPolygonF([line.p2(), destArrowP1, destArrowP2]))
-
-
-    def mouseDoubleClickEvent(self, event):
-        print(self.similarity)
-        super(Edge, self).mouseDoubleClickEvent(event)
-
-class Node(QGraphicsItem):
-    Type = QGraphicsItem.UserType + 1
-
-    def __init__(self, graphWidget,id,label):
-        super(Node, self).__init__()
-        self.id = id
-        self.label = label
-        self.graph = graphWidget
-        self.edgeList = []
-        self.newPos = QPointF()
-
-        #self.setFlag(QGraphicsItem.ItemIsMovable)
-        self.setFlag(QGraphicsItem.ItemIsSelectable)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)
-        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        self.setZValue(1)
-
-    def type(self):
-        return Node.Type
-
-    def addEdge(self, edge):
-        self.edgeList.append(edge)
-        edge.adjust()
-
-    def edges(self):
-        return self.edgeList
-
-    #def calculateForces(self):
-        #if not self.scene() or self.scene().mouseGrabberItem() is self:
-            #self.newPos = self.pos()
-            #return
-
-        ## Sum up all forces pushing this item away.
-        #xvel = 0.0
-        #yvel = 0.0
-        #for item in self.scene().items():
-            #if not isinstance(item, Node):
-                #continue
-
-            #line = QLineF(self.mapFromItem(item, 0, 0), QPointF(0, 0))
-            #dx = line.dx()
-            #dy = line.dy()
-            #l = 2.0 * (dx * dx + dy * dy)
-            #if l > 0:
-                #xvel += (dx * 150.0) / l
-                #yvel += (dy * 150.0) / l
-
-        ## Now subtract all forces pulling items together.
-        #weight = (len(self.edgeList) + 1) * 10.0
-        #for edge in self.edgeList:
-            #if edge.sourceNode() is self:
-                #pos = self.mapFromItem(edge.destNode(), 0, 0)
-            #else:
-                #pos = self.mapFromItem(edge.sourceNode(), 0, 0)
-            #xvel += pos.x() / weight
-            #yvel += pos.y() / weight
-
-        #if qAbs(xvel) < 0.1 and qAbs(yvel) < 0.1:
-            #xvel = yvel = 0.0
-
-        #sceneRect = self.scene().sceneRect()
-        #self.newPos = self.pos() + QPointF(xvel, yvel)
-        #self.newPos.setX(min(max(self.newPos.x(), sceneRect.left() + 10), sceneRect.right() - 10))
-        #self.newPos.setY(min(max(self.newPos.y(), sceneRect.top() + 10), sceneRect.bottom() - 10))
-
-    def advance(self):
-        if self.newPos == self.pos():
-            return False
-
-        self.setPos(self.newPos)
-        return True
-
-    def boundingRect(self):
-        adjust = 2.0
-        return QRectF(-10 - adjust, -10 - adjust, 23 + adjust, 23 + adjust)
-
-    def shape(self):
-        path = QPainterPath()
-        path.addEllipse(-10, -10, 20, 20)
-        return path
-
-    def paint(self, painter, option, widget):
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(Qt.darkGray)
-        painter.drawEllipse(-7, -7, 20, 20)
-
-        gradient = QRadialGradient(-3, -3, 10)
-        if option.state & QStyle.State_Sunken:
-            gradient.setCenter(3, 3)
-            gradient.setFocalPoint(3, 3)
-            gradient.setColorAt(1, QColor(Qt.yellow).lighter(120))
-            gradient.setColorAt(0, QColor(Qt.darkYellow).lighter(120))
-        else:
-            gradient.setColorAt(0, Qt.yellow)
-            gradient.setColorAt(1, Qt.darkYellow)
-
-        painter.setBrush(QBrush(gradient))
-        painter.setPen(QPen(Qt.black, 0))
-        painter.drawEllipse(-10, -10, 20, 20)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionHasChanged:
-            for edge in self.edgeList:
-                edge.adjust()
-            #self.graph.itemMoved()
-
-        return super(Node, self).itemChange(change, value)
-
-    def mouseDoubleClickEvent(self, event):
-        print(self.id,self.label)
-        super(Node, self).mouseDoubleClickEvent(event)
-
-    def mousePressEvent(self, event):
-        if event.button == 1:
-            self.setSelected(True)
-        if event.modifiers() == Qt.ControlModifier:
-            print(dir(event.modifiers()))
-        #self.update()
-        super(Node, self).mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        #self.update()
-        super(Node, self).mouseReleaseEvent(event)
