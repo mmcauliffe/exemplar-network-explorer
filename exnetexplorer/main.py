@@ -1,92 +1,97 @@
-import math
-import sys
-sys.path.append('/home/michael/dev/Linguistics/linguistic-helper-functions')
-sys.path.append('/home/michael/dev/Linguistics/python-praat-scripts')
-from linghelper.phonetics.similarity.envelope import envelope_similarity,calc_envelope,correlate_envelopes
-
 
 import os
-import networkx as nx
+from collections import OrderedDict
+
 import numpy
-import scipy.signal
+import csv
+
+import PySide
 
 from PySide.QtCore import (qAbs, QLineF, QPointF, qrand, QRectF, QSizeF, qsrand,
         Qt, QTime,QSettings,QSize,QPoint)
 from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainter,
         QPainterPath, QPen, QPolygonF, QRadialGradient, QApplication, QGraphicsItem, QGraphicsScene,
         QGraphicsView, QStyle,QMainWindow, QAction, QDialog, QDockWidget, QHBoxLayout, QWidget,
-        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel)
+        QFileDialog, QListWidget, QMessageBox,QTableWidget,QTableWidgetItem,QDialog,QItemSelectionModel,
+        QPushButton,QLabel,QTabWidget,QGroupBox, QRadioButton,QVBoxLayout,QLineEdit,QFormLayout,
+        QCheckBox,QFont,QSound)
 
-from plotting import SpecgramWidget,EnvelopeWidget,SimilarityWidget
+from exnetexplorer.config import Settings,PreferencesDialog
+from exnetexplorer.models import GraphModel, LoadWorker, ReclusterWorker, ReductionWorker
+from exnetexplorer.views import TableWidget, NetworkWidget, SpecgramWidget,RepresentationWidget,DistanceWidget
 
-from views import GraphWidget, TableWidget, NetworkGraphicsView
-from models import Graph
-
-class PreferencesDialog(QDialog):
-    def __init__(self, parent=None):
-        from PySide import QtGui
-        from PySide import QtCore
-        QDialog.__init__( self, parent )
-
-        firstButton = QtGui.QPushButton('a')
-        secondButton = QtGui.QPushButton('b')
-        thirdButton = QtGui.QPushButton('c')
-
-
-        tabWidget = QTabWidget()
-        tabWidget.addWidget( firstButton )
-        tabWidget.addWidget( secondButton )
-        tabWidget.addWidget( thirdButton )
-
-        pageComboBox = QtGui.QComboBox()
-        pageComboBox.setStyle
-        pageComboBox.addItems( ['Page 1', 'Page 2', 'Page 3'] )
-        QtCore.QObject.connect( pageComboBox, QtCore.SIGNAL( 'activated(int)'),
-                                stackedWidget,
-                                QtCore.SLOT('setCurrentIndex(int)') )
-
-        layout = QtGui.QHBoxLayout()
-        layout.addWidget( pageComboBox )
-        layout.addWidget( stackedWidget )
-        self.setLayout( layout )
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         self.setMinimumSize(1000, 800)
 
-        self.settings = QSettings('settings.ini',QSettings.IniFormat)
-        self.settings.setFallbacksEnabled(False)
+        self.settings = Settings()
 
-        self.resize(self.settings.value('size', QSize(270, 225)))
-        self.move(self.settings.value('pos', QPoint(50, 50)))
+        self.loader = LoadWorker()
+        self.loader.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.loader.updateProgress.connect(self.update_status, Qt.QueuedConnection)
+        self.reclusterer = ReclusterWorker()
+        self.reclusterer.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.reclusterer.updateProgress.connect(self.update_status, Qt.QueuedConnection)
+        self.reductioner = ReductionWorker()
+        self.reductioner.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.reductioner.updateProgress.connect(self.update_status, Qt.QueuedConnection)
+
+        self.resize(self.settings['size'])
+        self.move(self.settings['pos'])
         self.tokenTable = TableWidget(self)
-        self.graphWidget = GraphWidget(self)
+        font = QFont("Courier New", 14)
+        self.tokenTable.setFont(font)
+        self.graphWidget = NetworkWidget(parent=self)
         self.wrapper = QWidget()
         layout = QHBoxLayout(self.wrapper)
         layout.addWidget(self.tokenTable)
         layout.addWidget(self.graphWidget)
         self.wrapper.setLayout(layout)
         self.setCentralWidget(self.wrapper)
-        self.loadWordTokens()
 
+        self.status = QLabel()
+        self.status.setText("Ready")
+        self.statusBar().addWidget(self.status)
 
         self.setWindowTitle("Exemplar Network Explorer")
         self.createActions()
         self.createMenus()
         self.createToolBars()
-        self.createStatusBar()
         self.createDockWindows()
+        self.graphModel = None
+        #self.load_data()
+
+
+    def update_status(self,message):
+        self.status.setText(message)
 
     def createActions(self):
 
-        self.createNetworkAct = QAction( "&Create network from folder",
+        self.createNetworkWavAct = QAction( "&Create network from folder...",
                 self, shortcut=QKeySequence.Open,
                 statusTip="Create network from folder", triggered=self.createNetwork)
+
+        self.exportTableAct = QAction( "Export table as text file...",
+                self,
+                statusTip="Export table as text file", triggered=self.exportTable)
 
         self.editPreferencesAct = QAction( "&Preferences...",
                 self,
                 statusTip="Edit preferences", triggered=self.editPreferences)
+
+        self.networkStatisticsAct = QAction( "&Network statistics",
+                self,
+                statusTip="Network statistics", triggered=self.networkStatistics)
+
+        self.clusterAnalysisAct = QAction( "&Analyze clustering performance...",
+                self,
+                statusTip="Analyze clustering performance", triggered=self.clusterAnalysis)
+
+        self.exemplarReductionAct = QAction( "&Calculate exemplar reduction measure...",
+                self,
+                statusTip="Calculate exemplar reduction", triggered=self.exemplarReduction)
 
         self.specgramAct = QAction( "&View token spectrogram",
                 self,
@@ -96,9 +101,9 @@ class MainWindow(QMainWindow):
                 self,
                 statusTip="View token details", triggered=self.details)
 
-        self.envelopeAct = QAction( "&View token envelopes",
+        self.representationAct = QAction( "&View token representation",
                 self,
-                statusTip="View token amplitude envelopes", triggered=self.envelope)
+                statusTip="View token amplitude representation", triggered=self.representation)
 
         self.playfileAct = QAction( "&Play token",
                 self,
@@ -111,68 +116,109 @@ class MainWindow(QMainWindow):
                 statusTip="Show the application's About box",
                 triggered=self.about)
 
-    def loadWordTokens(self):
-        g = nx.Graph()
-        token_path = self.settings.value('path','')
-        num_bands = self.settings.value('num_bands',8)
-        erb = self.settings.value('erb',False)
-        freq_lims = self.settings.value('freq_lims',(80,7800))
-        if token_path != '':
-            files = os.listdir(token_path)
-            nodes = []
-            ind = 0
-            for f in files:
-                if not (f.endswith('.wav') or f.endswith('.WAV')):
-                    continue
-                env = calc_envelope(os.path.join(token_path,f),num_bands,freq_lims,erb)
+    def batchExemplarReduction(self):
+        token_dir = QFileDialog.getExistingDirectory(self,
+                "Choose a directory")
+        if not token_dir:
+            return
 
-                nodes.append((ind,{'label':f,'acoustics':{'envelopes':env}}))
-                ind += 1
 
-            edges = []
-            for i in range(len(nodes)-1):
-                envsOne = nodes[i][1]['acoustics']['envelopes']
-                for j in range(i+1,len(nodes)):
-                    envsTwo = nodes[j][1]['acoustics']['envelopes']
-                    sim = correlate_envelopes(envsOne,envsTwo)
-                    if sim > 0.9:
-                        edges.append((nodes[i][0],nodes[j][0],sim))
+    def clusterAnalysis(self):
+        pass
 
-            g.add_nodes_from(nodes)
-            g.add_weighted_edges_from(edges)
-        self.graph = Graph(g)
-        self.tokenTable.setModel(self.graph)
-        self.tokenTable.setSelectionModel(QItemSelectionModel(self.graph))
-        self.tokenTable.selectionModel().selectionChanged.connect(self.selectToken)
+    def networkStatistics(self):
+        pass
+
+    def exemplarReduction(self):
+        if self.graphModel is None:
+            return
+        self.reductioner.set_params(self.graphModel.cluster_network)
+        self.reductioner.start()
+
+    def load_data(self):
+        self.loader.set_params(self.settings)
+        self.loader.start()
+
+    def get_data(self, data):
+        self.graphModel = GraphModel(data)
+        graphSelectionModel = QItemSelectionModel(self.graphModel)
+
+        self.tokenTable.setModel(self.graphModel)
         self.graphWidget.setModel(self.tokenTable.model())
+
+        self.tokenTable.setSelectionModel(graphSelectionModel)
+        self.graphWidget.setSelectionModel(self.tokenTable.selectionModel())
+
+        self.tokenTable.selectionModel().selectionChanged.connect(self.selectTableToken)
+        self.graphWidget.selectionModel().selectionChanged.connect(self.selectGraphToken)
+
+        self.tokenTable.resizeColumnsToContents()
 
     def createNetwork(self):
         token_path = QFileDialog.getExistingDirectory(self,
                 "Choose a directory")
         if not token_path:
             return
-        self.settings.setValue('path',token_path)
-        self.loadWordTokens()
+        self.settings['path'] = token_path
+        self.load_data()
+
+    def exportTable(self):
+        out_path = QFileDialog.getSaveFileName(self,
+                "Specify a file path")
+        if not out_path[0]:
+            return
+        with open(out_path[0],'w') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(self.graphModel.columns)
+            for rowNumber in range(self.graphModel.rowCount()):
+                fields = [
+                    self.graphModel.data(
+                        self.graphModel.index(rowNumber, columnNumber),
+                        Qt.DisplayRole
+                    )
+                    for columnNumber in range(self.graphModel.columnCount())
+                ]
+                writer.writerow(fields)
 
     def about(self):
         QMessageBox.about(self, "About Exemplar Network Explorer",
                 "Placeholder "
                 "Go on... ")
 
+    def recluster(self,redo_scores = False):
+        self.reclusterer.set_params(self.settings, self.graphModel.cluster_network, redo_scores)
+        self.reclusterer.start()
+
     def editPreferences(self):
-        dialog = PreferencesDialog(self)
-        dialog.show()
+        dialog = PreferencesDialog(self,self.settings)
+        result = dialog.exec_()
+        if result:
+            self.settings = dialog.settings
+            if dialog.rep_changed:
+                self.load_data()
+            elif dialog.network_changed:
+                self.recluster(True)
+                self.graphWidget.get_defaults()
+            else:
+                self.recluster(False)
+                self.graphWidget.get_defaults()
 
     def createMenus(self):
         self.fileMenu = self.menuBar().addMenu("&File")
-        self.fileMenu.addAction(self.createNetworkAct)
+        self.fileMenu.addAction(self.createNetworkWavAct)
+        self.fileMenu.addAction(self.exportTableAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.quitAct)
 
         self.editMenu = self.menuBar().addMenu("&Edit")
         self.editMenu.addAction(self.editPreferencesAct)
 
-        self.viewMenu = self.menuBar().addMenu("&View")
+        self.analysisMenu = self.menuBar().addMenu("&Analysis")
+        self.analysisMenu.addAction(self.networkStatisticsAct)
+        self.analysisMenu.addAction(self.clusterAnalysisAct)
+        self.analysisMenu.addAction(self.exemplarReductionAct)
+
+        self.viewMenu = self.menuBar().addMenu("&Windows")
 
         self.menuBar().addSeparator()
 
@@ -181,71 +227,81 @@ class MainWindow(QMainWindow):
 
     def specgram(self):
         selected = self.tokenTable.selectionModel().selectedRows()
-        print(selected)
         if not selected:
+            self.specgramWindow.reset()
             return
         if len(selected) > 1:
             return
 
         selectedInd = selected[0].row()
-        wavfile = self.tokenTable.model().data(selected[0])
-        token_path = self.settings.value('path','')
-        self.specgramWindow.plot(os.path.join(token_path,wavfile))
-        self.specgramWindow.resize(4,3)
+        node = self.graphModel.cluster_network[selectedInd]
+        win_len = 0.025
+        time_step = 0.01
+
+        token_path = self.settings['path']
+        if not token_path:
+            return
+        self.specgramWindow.plot_specgram(
+                    os.path.join(token_path,node['label']),
+                    win_len, time_step)
 
 
 
     def details(self):
         return
 
-    def envelope(self):
+    def representation(self):
         selected = self.tokenTable.selectionModel().selectedRows()
         if not selected:
+            self.representationWindow.reset()
             return
         if len(selected) > 1:
             return
 
         selectedInd = selected[0].row()
-        for n in self.graph.g.nodes_iter(data=True):
-            if n[0] == selectedInd:
-                self.envelopeWindow.plot(n[1]['acoustics']['envelopes'])
-                break
-        self.envelopeWindow.resize(4,3)
+        node = self.graphModel.cluster_network[selectedInd]
+        self.representationWindow.plot_representation(node['representation'])
 
     def similarity(self):
         selected = self.tokenTable.selectionModel().selectedRows()
         if len(selected) != 2:
+            self.distanceWindow.reset()
             return
 
         selectedIndOne = selected[0].row()
         selectedIndTwo = selected[1].row()
-        envsOne = []
-        envsTwo = []
-        for n in self.graph.g.nodes_iter(data=True):
-            if n[0] == selectedIndOne:
-                envsOne = n[1]['acoustics']['envelopes']
-            elif n[0] == selectedIndTwo:
-                envsTwo = n[1]['acoustics']['envelopes']
-        self.similarityWindow.plot(envsOne,envsTwo)
-        self.similarityWindow.resize(4,3)
+
+        repOne = self.graphModel.cluster_network[selectedIndOne]['representation']
+        repTwo = self.graphModel.cluster_network[selectedIndTwo]['representation']
+        self.distanceWindow.plot_dist_mat(repOne,repTwo)
 
     def playfile(self):
-        return
+        selected = self.tokenTable.selectionModel().selectedRows()
+        ind = selected[0].row()
+
+        token_path = self.settings['path']
+        if not token_path:
+            return
+        QSound(os.path.join(token_path,self.graphModel.cluster_network[ind]['label'])).play()
+
 
     def createToolBars(self):
         self.fileToolBar = self.addToolBar("Details")
         self.fileToolBar.addAction(self.playfileAct)
 
-    def createStatusBar(self):
-        self.statusBar().showMessage("Ready")
-
     def selectToken(self):
-        selected = self.tokenTable.selectionModel().selectedRows()
-        if len(selected) == 1:
-            self.specgram()
-            self.envelope()
-        elif len(selected) == 2:
-            self.similarity()
+        self.specgram()
+        self.representation()
+        self.similarity()
+        self.tokenTable.viewport().update()
+
+    def selectTableToken(self):
+        self.graphWidget.setSelectionModel(self.tokenTable.selectionModel())
+        self.selectToken()
+
+    def selectGraphToken(self):
+        self.tokenTable.setSelectionModel(self.graphWidget.selectionModel())
+        self.selectToken()
 
 
     def createDockWindows(self):
@@ -261,35 +317,27 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
-        dock = QDockWidget("Envelopes", self)
-        self.envelopeWindow = EnvelopeWidget(parent=dock)
-        dock.setWidget(self.envelopeWindow)
+        dock = QDockWidget("Auditory Representation", self)
+        self.representationWindow = RepresentationWidget(parent=dock)
+        dock.setWidget(self.representationWindow)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
 
-        dock = QDockWidget("Similarity", self)
-        self.similarityWindow = SimilarityWidget(parent=dock)
-        dock.setWidget(self.similarityWindow)
+        dock = QDockWidget("Distance", self)
+        self.distanceWindow = DistanceWidget(parent=dock)
+        dock.setWidget(self.distanceWindow)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
-        #self.paragraphsList.currentTextChanged.connect(self.addParagraph)
 
     def closeEvent(self, e):
-        self.settings.setValue('size', self.size())
-        self.settings.setValue('pos', self.pos())
+        self.settings['size'] = self.size()
+        self.settings['pos'] = self.pos()
         e.accept()
 
 
-if __name__ == '__main__':
 
-    import sys
-
-    app = QApplication(sys.argv)
-    qsrand(QTime(0,0,0).secsTo(QTime.currentTime()))
-
-    main = MainWindow()
-    main.show()
-
-    sys.exit(app.exec_())
+def dependencies_for_cxfreeze():
+    from scipy.sparse.csgraph import _validation
+    from scipy.special import _ufuncs_cxx
