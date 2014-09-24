@@ -18,7 +18,7 @@ from PySide.QtGui import (QBrush, QKeySequence, QColor, QLinearGradient, QPainte
 
 from exnetexplorer.config import Settings,PreferencesDialog
 from exnetexplorer.models import GraphModel, LoadWorker, ReclusterWorker, ReductionWorker
-from exnetexplorer.views import TableWidget, NetworkWidget, SpecgramWidget,EnvelopeWidget,DistanceWidget
+from exnetexplorer.views import TableWidget, NetworkWidget, SpecgramWidget,RepresentationWidget,DistanceWidget
 
 
 class MainWindow(QMainWindow):
@@ -30,10 +30,13 @@ class MainWindow(QMainWindow):
 
         self.loader = LoadWorker()
         self.loader.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.loader.updateProgress.connect(self.update_status, Qt.QueuedConnection)
         self.reclusterer = ReclusterWorker()
         self.reclusterer.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.reclusterer.updateProgress.connect(self.update_status, Qt.QueuedConnection)
         self.reductioner = ReductionWorker()
         self.reductioner.dataReady.connect(self.get_data, Qt.QueuedConnection)
+        self.reductioner.updateProgress.connect(self.update_status, Qt.QueuedConnection)
 
         self.resize(self.settings['size'])
         self.move(self.settings['pos'])
@@ -48,18 +51,21 @@ class MainWindow(QMainWindow):
         self.wrapper.setLayout(layout)
         self.setCentralWidget(self.wrapper)
 
+        self.status = QLabel()
+        self.status.setText("Ready")
+        self.statusBar().addWidget(self.status)
 
         self.setWindowTitle("Exemplar Network Explorer")
         self.createActions()
         self.createMenus()
         self.createToolBars()
-        self.createStatusBar()
         self.createDockWindows()
         self.graphModel = None
-        self.load_data()
+        #self.load_data()
 
 
-
+    def update_status(self,message):
+        self.status.setText(message)
 
     def createActions(self):
 
@@ -83,9 +89,9 @@ class MainWindow(QMainWindow):
                 self,
                 statusTip="Analyze clustering performance", triggered=self.clusterAnalysis)
 
-        self.exemplarReductionAct = QAction( "&Caculate exemplar reduction measure...",
+        self.exemplarReductionAct = QAction( "&Calculate exemplar reduction measure...",
                 self,
-                statusTip="Caculate exemplar reduction", triggered=self.exemplarReduction)
+                statusTip="Calculate exemplar reduction", triggered=self.exemplarReduction)
 
         self.specgramAct = QAction( "&View token spectrogram",
                 self,
@@ -95,9 +101,9 @@ class MainWindow(QMainWindow):
                 self,
                 statusTip="View token details", triggered=self.details)
 
-        self.envelopeAct = QAction( "&View token envelopes",
+        self.representationAct = QAction( "&View token representation",
                 self,
-                statusTip="View token amplitude envelopes", triggered=self.envelope)
+                statusTip="View token amplitude representation", triggered=self.representation)
 
         self.playfileAct = QAction( "&Play token",
                 self,
@@ -124,6 +130,8 @@ class MainWindow(QMainWindow):
         pass
 
     def exemplarReduction(self):
+        if self.graphModel is None:
+            return
         self.reductioner.set_params(self.graphModel.cluster_network)
         self.reductioner.start()
 
@@ -220,6 +228,7 @@ class MainWindow(QMainWindow):
     def specgram(self):
         selected = self.tokenTable.selectionModel().selectedRows()
         if not selected:
+            self.specgramWindow.reset()
             return
         if len(selected) > 1:
             return
@@ -241,20 +250,22 @@ class MainWindow(QMainWindow):
     def details(self):
         return
 
-    def envelope(self):
+    def representation(self):
         selected = self.tokenTable.selectionModel().selectedRows()
         if not selected:
+            self.representationWindow.reset()
             return
         if len(selected) > 1:
             return
 
         selectedInd = selected[0].row()
         node = self.graphModel.cluster_network[selectedInd]
-        self.envelopeWindow.plot_envelopes(node['representation'])
+        self.representationWindow.plot_representation(node['representation'])
 
     def similarity(self):
         selected = self.tokenTable.selectionModel().selectedRows()
         if len(selected) != 2:
+            self.distanceWindow.reset()
             return
 
         selectedIndOne = selected[0].row()
@@ -278,16 +289,10 @@ class MainWindow(QMainWindow):
         self.fileToolBar = self.addToolBar("Details")
         self.fileToolBar.addAction(self.playfileAct)
 
-    def createStatusBar(self):
-        self.statusBar().showMessage("Ready")
-
     def selectToken(self):
-        selected = self.tokenTable.selectionModel().selectedRows()
-        if len(selected) == 1:
-            self.specgram()
-            self.envelope()
-        elif len(selected) == 2:
-            self.similarity()
+        self.specgram()
+        self.representation()
+        self.similarity()
         self.tokenTable.viewport().update()
 
     def selectTableToken(self):
@@ -312,9 +317,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
-        dock = QDockWidget("Envelopes", self)
-        self.envelopeWindow = EnvelopeWidget(parent=dock)
-        dock.setWidget(self.envelopeWindow)
+        dock = QDockWidget("Auditory Representation", self)
+        self.representationWindow = RepresentationWidget(parent=dock)
+        dock.setWidget(self.representationWindow)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 

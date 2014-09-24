@@ -86,7 +86,6 @@ class TableWidget(QTableView):
         #dialog.setViewMode(QFileDialog.Detail)
         #dialog.setDirectory(os.getcwd())
         #dialog.selectFile(
-        print(index)
         gInd = index.row()
         name = self.model().data(index)
         filename,filt = QFileDialog.getSaveFileName(self,"Save representation",os.path.join(os.getcwd(),name.replace('.wav','.txt')),"Text files (*.txt)")
@@ -132,11 +131,15 @@ class SpecgramWidget(pg.PlotWidget):
         self.setLabel('left', 'Frequency', units='Hz')
         self.setLabel('bottom', 'Time', units='s')
 
+    def reset(self):
+        self.heatmap.setImage(zeros((10, 10)),opacity=0)
+        self.show()
+        self.update()
+
 
     def plot_specgram(self,token_path, win_len= 0.005, time_step = 0.01):
         win_len= 0.005
-        spec,display_info = to_specgram(token_path,win_len,time_step,return_info=True)
-        num_samps, sr = display_info
+        spec,freqs,times = to_specgram(token_path,win_len)
         dynamic_range = 70
         spec[spec < spec.max()-dynamic_range] = spec.max()-dynamic_range
         self.heatmap.setImage(spec,opacity=0.7,levels=[spec.max(),spec.min()])
@@ -145,7 +148,7 @@ class SpecgramWidget(pg.PlotWidget):
         self.update()
 
 
-class EnvelopeWidget(pg.PlotWidget):
+class RepresentationWidget(pg.PlotWidget):
     def __init__(self,parent=None):
         v = pg.ViewBox(enableMouse=False)
         pg.PlotWidget.__init__(self,parent=parent,name = 'Auditory representation',viewBox=v,enableMenu=False)
@@ -157,8 +160,12 @@ class EnvelopeWidget(pg.PlotWidget):
             print(range)
         #self.sigRangeChanged.connect(changed)
 
-    def plot_envelopes(self,rep):
-        print(rep.shape)
+    def reset(self):
+        self.heatmap.setImage(zeros((10, 10)),opacity=0)
+        self.show()
+        self.update()
+
+    def plot_representation(self,rep):
         self.setXRange(0, rep.shape[0])
         self.setYRange(0, rep.shape[1])
         self.heatmap.setImage(rep,levels=[rep.max(),rep.min()],opacity=0.7)
@@ -171,6 +178,11 @@ class DistanceWidget(pg.PlotWidget):
         pg.PlotWidget.__init__(self,parent=parent,name = 'Distance matrix',viewBox=v,enableMenu=False)
         self.heatmap = Heatmap()
         self.addItem(self.heatmap)
+
+    def reset(self):
+        self.heatmap.setImage(zeros((10, 10)),opacity=0)
+        self.show()
+        self.update()
 
 
     def plot_dist_mat(self,source,target):
@@ -255,7 +267,6 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
 
     def clicked(self,pts,mode):
 
-        self.symbols = ['o']*len(self.graphModel.cluster_network)
         if mode:
             selectMode = QItemSelectionModel.Toggle
         else:
@@ -265,7 +276,7 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
             ind1 = self.graphModel.createIndex(p[0],self.model().columnCount())
             selection = QItemSelection(ind,ind1)
             self.selectionModel().select(selection,selectMode)
-            self.symbols[p[0]] = '+'
+        self.to_update()
 
     def get_defaults(self,*args):
 
@@ -277,18 +288,11 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
     def setModel(self,model):
         self.graphModel = model
         self.graphModel.plotUpdate.connect(self.to_update)
-        self.get_defaults()
 
 
     def setSelectionModel(self,selectionModel):
         self.selectionGraphModel = selectionModel
-        selected = self.selectionModel().selectedRows()
-        if not selected:
-            return
-        self.symbols = ['o']*len(self.graphModel.cluster_network)
-        for i in selected:
-            self.symbols[i.row()] = '+'
-        self.update_data()
+        self.to_update()
 
     def model(self):
         return self.graphModel
@@ -299,7 +303,16 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
     def to_update(self,obj=None):
         self.spots,self.adj = self.graphModel.to_plot()
         self.pos = []
+        try:
+            selected = self.selectionModel().selectedRows()
+            selected = [x.row() for x in selected]
+        except AttributeError:
+            selected = []
         for i,s in enumerate(self.spots):
+            if i in selected:
+                s['pen'] = pg.mkPen('r')
+            else:
+                s['pen'] = pg.mkPen('k')
             for k,v in s.items():
                 if k == 'pos':
                     self.pos.append(v)
@@ -307,7 +320,7 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
                     if v is None:
                         val = symbols[0]
                     elif v[0] == 'factor':
-                        if v[1] > len(symbols):
+                        if v[1] > len(symbols) - 1:
                             val = symbols[-1]
                         else:
                             val = symbols[v[1]]

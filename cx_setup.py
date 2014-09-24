@@ -18,7 +18,7 @@ shortcut_table = [
      "ProgramMenuFolder",          # Directory_
      "%s" % (exe_name,),           # Name
      "TARGETDIR",              # Component_
-     "[TARGETDIR]pct.exe",# Target
+     "[TARGETDIR]ene.exe",# Target
      None,                     # Arguments
      None,                     # Description
      None,                     # Hotkey
@@ -30,18 +30,18 @@ shortcut_table = [
     ]
 
 build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', 'tcl','matplotlib'],
-                    "include_files": [(os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csr.pyd'),'_csr.pyd'),
-                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csc.pyd'),'_csc.pyd'),
-                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_coo.pyd'),'_coo.pyd'),
-                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_dia.pyd'),'_dia.pyd'),
-                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_bsr.pyd'),'_bsr.pyd'),
-                                        (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csgraph.pyd'),'_csgraph.pyd'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/libifcoremd.dll'),'libifcoremd.dll'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/libifportmd.dll'),'libifportmd.dll'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/libiompstubs5md.dll'),'libiompstubs5md.dll'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/libmmd.dll'),'libmmd.dll'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/svml_dispmd.dll'),'svml_dispmd.dll'),
-                                        (os.path.join(getsitepackages()[1],'numpy/core/tbb.dll'),'tbb.dll')],
+                    #"include_files": [(os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csr.pyd'),'_csr.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csc.pyd'),'_csc.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_coo.pyd'),'_coo.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_dia.pyd'),'_dia.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_bsr.pyd'),'_bsr.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csgraph.pyd'),'_csgraph.pyd'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libifcoremd.dll'),'libifcoremd.dll'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libifportmd.dll'),'libifportmd.dll'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libiompstubs5md.dll'),'libiompstubs5md.dll'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libmmd.dll'),'libmmd.dll'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/svml_dispmd.dll'),'svml_dispmd.dll'),
+                    #                    (os.path.join(getsitepackages()[1],'numpy/core/tbb.dll'),'tbb.dll')],
                     "includes": [
                                   "numpy.lib.format",
                                   "numpy.linalg",
@@ -50,7 +50,7 @@ build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', '
                                   "scipy.io.matlab.streams",
                                   "scipy.integrate",
                                   "scipy.integrate.vode",
-                                  "scipy.sparse.linalg.dsolve.umfpack",
+                                  #"scipy.sparse.linalg.dsolve.umfpack",
                                   "scipy.integrate.lsoda",
                                   "scipy.special",
                                   "scipy.special._ufuncs_cxx",
@@ -66,7 +66,7 @@ build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', '
 msi_data = {"Shortcut": shortcut_table}
 
 bdist_msi_options = {
-        'upgrade_code':'{9f3fd2c0-db11-4d9b-8124-2e91e6cfd19d}',
+        'upgrade_code':'{e4bd823f-e5bd-444c-b094-e4e6c76f990d}',
         'add_to_path': False,
         'initial_target_dir': r'[ProgramFiles64Folder]\%s\%s' % (group_name, exe_name),
         'data':msi_data}
@@ -76,7 +76,7 @@ base = None
 #    base = "Win32GUI"
 
 setup(name='Exemplar Network Explorer',
-      version='0.15',
+      version='0.1',
       description='',
       long_description='',
       classifiers=[

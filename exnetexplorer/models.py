@@ -32,11 +32,12 @@ class LoadWorker(QThread):
             token_path = ''
         if not token_path:
             return
-
+        self.updateProgress.emit("Processing acoustic tokens, please be patient...")
         kwarg_dict = self.settings.acousticsim_kwarg()
 
-        scores,self.reps = analyze_directory(token_path,**kwarg_dict)
+        scores,self.reps = analyze_directory(token_path, call_back = self.updateProgress.emit,**kwarg_dict)
 
+        self.updateProgress.emit("Finished acoustic processing! Clustering tokens now...")
         cn = ClusterNetwork(self.reps)
 
 
@@ -44,7 +45,7 @@ class LoadWorker(QThread):
         one_cluster = self.settings['one_cluster']
 
         cn.cluster(scores,cluster_method,one_cluster)
-
+        self.updateProgress.emit("Ready")
         self.dataReady.emit(cn)
 
 class ReclusterWorker(QThread):
@@ -65,15 +66,18 @@ class ReclusterWorker(QThread):
 
         cluster_method = self.settings['cluster_alg']
         one_cluster = self.settings['one_cluster']
-        if redo_scores:
+        if self.redo_scores:
+            self.updateProgress.emit("Recalculating distances...")
             kwarg_dict = self.settings.acousticsim_kwarg()
             kwarg_dict['cache'] = self.cn.reps
             kwarg_dict['return_rep'] = False
             scores = analyze_directory(token_path,**kwarg_dict)
         else:
             scores = None
+        self.updateProgress.emit("Clustering tokens...")
         self.cn.cluster(scores,cluster_method,one_cluster)
 
+        self.updateProgress.emit("Ready")
         self.dataReady.emit(self.cn)
 
 class ReductionWorker(QThread):
@@ -88,8 +92,10 @@ class ReductionWorker(QThread):
         self.cn = cn
 
     def run(self):
+        self.updateProgress.emit("Calculating reduction...")
         self.cn.calc_reduction()
 
+        self.updateProgress.emit("Ready")
         self.dataReady.emit(self.cn)
 
 
@@ -149,7 +155,10 @@ class GraphModel(QAbstractTableModel):
         return out, adj
 
     def changeFactorDisplay(self,column,display):
-        self.display[display] = column
+        if self.display[display] == column:
+            self.display[display] = None
+        else:
+            self.display[display] = column
         self.plotUpdate.emit()
 
     def rowCount(self,parent=None):
@@ -162,7 +171,6 @@ class GraphModel(QAbstractTableModel):
 
     def data(self, index, role=None):
         if not index.isValid():
-            print(index.column())
             return None
         elif role != Qt.DisplayRole:
             return None
