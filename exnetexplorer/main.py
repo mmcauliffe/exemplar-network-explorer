@@ -20,6 +20,41 @@ from exnetexplorer.config import Settings,PreferencesDialog
 from exnetexplorer.models import GraphModel, LoadWorker, ReclusterWorker, ReductionWorker
 from exnetexplorer.views import TableWidget, NetworkWidget, SpecgramWidget,RepresentationWidget,DistanceWidget
 
+class ClusterAnalysisWindow(QDialog):
+
+    def __init__(self, parent,silhouette,completeness,homogeneity,v_score,AMI,ARS):
+        QDialog.__init__( self, parent )
+        layout = QVBoxLayout()
+
+        viewLayout = QFormLayout()
+        viewLayout.addRow(QLabel('Silhouette score: '),QLabel(silhouette))
+        viewLayout.addRow(QLabel('Completeness: '),QLabel(completeness))
+        viewLayout.addRow(QLabel('Homogeneity: '),QLabel(homogeneity))
+        viewLayout.addRow(QLabel('V score: '),QLabel(v_score))
+        viewLayout.addRow(QLabel('Adjusted mutual information: '),QLabel(AMI))
+        viewLayout.addRow(QLabel('Adjusted Rand score: '),QLabel(ARS))
+
+        viewWidget = QGroupBox()
+        viewWidget.setLayout(viewLayout)
+
+        layout.addWidget(viewWidget)
+
+        #Accept cancel
+        self.acceptButton = QPushButton('Ok')
+        self.cancelButton = QPushButton('Cancel')
+
+        self.acceptButton.clicked.connect(self.accept)
+        self.cancelButton.clicked.connect(self.reject)
+
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.acceptButton)
+        hbox.addWidget(self.cancelButton)
+        ac = QWidget()
+        ac.setLayout(hbox)
+        layout.addWidget(ac)
+        self.setLayout(layout)
+
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -124,7 +159,26 @@ class MainWindow(QMainWindow):
 
 
     def clusterAnalysis(self):
-        pass
+        if self.graphModel is None:
+            silhouette = "N/A"
+            completeness = "N/A"
+            homogeneity = "N/A"
+            v_score = "N/A"
+            AMI = "N/A"
+            ARS = "N/A"
+        else:
+            silhouette = str(round(self.graphModel.cluster_network.silhouette_coefficient(),4))
+            completeness = str(round(self.graphModel.cluster_network.completeness(),4))
+            homogeneity = str(round(self.graphModel.cluster_network.homogeneity(),4))
+            v_score = str(round(self.graphModel.cluster_network.v_score(),4))
+            AMI = str(round(self.graphModel.cluster_network.adjusted_mutual_information(),4))
+            ARS = str(round(self.graphModel.cluster_network.adjusted_rand_score(),4))
+
+        dialog = ClusterAnalysisWindow(self,silhouette,
+                                    completeness,homogeneity,v_score,AMI,ARS)
+
+        result = dialog.exec_()
+
 
     def networkStatistics(self):
         pass
@@ -242,7 +296,7 @@ class MainWindow(QMainWindow):
         if not token_path:
             return
         self.specgramWindow.plot_specgram(
-                    os.path.join(token_path,node['label']),
+                    node['rep']._filepath,
                     win_len, time_step)
 
 
@@ -260,7 +314,7 @@ class MainWindow(QMainWindow):
 
         selectedInd = selected[0].row()
         node = self.graphModel.cluster_network[selectedInd]
-        self.representationWindow.plot_representation(node['representation'])
+        self.representationWindow.plot_representation(node['rep']._rep)
 
     def similarity(self):
         selected = self.tokenTable.selectionModel().selectedRows()
@@ -271,8 +325,8 @@ class MainWindow(QMainWindow):
         selectedIndOne = selected[0].row()
         selectedIndTwo = selected[1].row()
 
-        repOne = self.graphModel.cluster_network[selectedIndOne]['representation']
-        repTwo = self.graphModel.cluster_network[selectedIndTwo]['representation']
+        repOne = self.graphModel.cluster_network[selectedIndOne]['rep']._rep
+        repTwo = self.graphModel.cluster_network[selectedIndTwo]['rep']._rep
         self.distanceWindow.plot_dist_mat(repOne,repTwo)
 
     def playfile(self):

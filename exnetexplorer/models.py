@@ -112,17 +112,17 @@ class GraphModel(QAbstractTableModel):
         self.ranges = {}
         for n in self.cluster_network:
             for c in self.columns:
-                if isinstance(n[c],str):
+                if isinstance(n['rep'][c],str):
                     if c not in self.ranges:
                         self.ranges[c] = set([])
-                    self.ranges[c].update([n[c]])
-                elif isinstance(n[c], float):
+                    self.ranges[c].update([n['rep'][c]])
+                elif isinstance(n['rep'][c], float):
                     if c not in self.ranges:
                         self.ranges[c] = (inf,-inf)
-                    if n[c] < self.ranges[c][0]:
-                        self.ranges[c] = (n[c],self.ranges[c][1])
-                    if n[c] > self.ranges[c][1]:
-                        self.ranges[c] = (self.ranges[c][0],n[c])
+                    if n['rep'][c] < self.ranges[c][0]:
+                        self.ranges[c] = (n['rep'][c],self.ranges[c][1])
+                    if n['rep'][c] > self.ranges[c][1]:
+                        self.ranges[c] = (self.ranges[c][0],n['rep'][c])
 
         for k,v in self.ranges.items():
             if isinstance(v,set):
@@ -141,10 +141,10 @@ class GraphModel(QAbstractTableModel):
                     r = self.ranges[colname]
                     numeric = isinstance(r,tuple)
                     if numeric:
-                        outdict[k] = ('numeric',(n[colname] - r[0]) / (r[1] - r[0]))
+                        outdict[k] = ('numeric',(n['rep'][colname] - r[0]) / (r[1] - r[0]))
                     else:
                         for i,v in enumerate(r):
-                            if v == n[colname]:
+                            if v == n['rep'][colname]:
                                 val = i
                                 break
                         else:
@@ -177,7 +177,7 @@ class GraphModel(QAbstractTableModel):
         row = index.row()
         col = index.column()
         node = self.cluster_network[row]
-        data = node[self.columns[col]]
+        data = node['rep'][self.columns[col]]
 
         if isinstance(data,float):
             data = str(round(data,3))
