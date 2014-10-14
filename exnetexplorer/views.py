@@ -185,12 +185,13 @@ class DistanceWidget(pg.PlotWidget):
         self.update()
 
 
-    def plot_dist_mat(self,source,target):
+    def plot_dist_mat(self,source,target,distance):
 
         distMat = generate_distance_matrix(source,target)
         self.setXRange(0, source.shape[0])
         self.setYRange(0, target.shape[0])
         self.heatmap.setImage(distMat,levels=[distMat.max(),distMat.min()],opacity=0.7)
+        self.getPlotItem().setTitle('Overall distance: %.2f'%distance)
         self.show()
         self.update()
 
@@ -258,7 +259,7 @@ class NetworkWidget(pg.GraphicsLayoutWidget):
         self.v = self.addViewBox(enableMenu=False)
         self.g = NetworkGraph()
         self.v.addItem(self.g)
-        self.v.setMouseEnabled(x=False,y=False)
+        self.v.setMouseEnabled(x=True,y=True)
         self.v.enableAutoRange('xy')
         self.adj = None
         self.symbolPen = pg.mkPen(color=pg.mkColor('k'))

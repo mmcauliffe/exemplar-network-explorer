@@ -327,7 +327,8 @@ class MainWindow(QMainWindow):
 
         repOne = self.graphModel.cluster_network[selectedIndOne]['rep']._rep
         repTwo = self.graphModel.cluster_network[selectedIndTwo]['rep']._rep
-        self.distanceWindow.plot_dist_mat(repOne,repTwo)
+        distance = self.graphModel.cluster_network[selectedIndOne,selectedIndTwo]
+        self.distanceWindow.plot_dist_mat(repOne,repTwo,distance)
 
     def playfile(self):
         selected = self.tokenTable.selectionModel().selectedRows()
@@ -336,7 +337,7 @@ class MainWindow(QMainWindow):
         token_path = self.settings['path']
         if not token_path:
             return
-        QSound(os.path.join(token_path,self.graphModel.cluster_network[ind]['label'])).play()
+        QSound(os.path.join(token_path,self.graphModel.cluster_network[ind]['rep']._filepath)).play()
 
 
     def createToolBars(self):

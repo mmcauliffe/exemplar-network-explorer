@@ -29,7 +29,14 @@ shortcut_table = [
      )
     ]
 
-build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', 'tcl','matplotlib'],
+build_exe_options = {"excludes": ['tkinter',
+                                'tk', 
+                                '_tkagg', 
+                                '_gtkagg', 
+                                '_gtk', 
+                                'tcl',
+                                'matplotlib'
+                                ],
                     #"include_files": [(os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csr.pyd'),'_csr.pyd'),
                     #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csc.pyd'),'_csc.pyd'),
                     #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_coo.pyd'),'_coo.pyd'),
@@ -43,11 +50,15 @@ build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', '
                     #                    (os.path.join(getsitepackages()[1],'numpy/core/svml_dispmd.dll'),'svml_dispmd.dll'),
                     #                    (os.path.join(getsitepackages()[1],'numpy/core/tbb.dll'),'tbb.dll')],
                     "includes": [
+                                  "PySide",
+                                  "atexit",
+                                  "numpy",
+                                  "scipy",
+                                  "numpy.core.multiarray",
                                   "numpy.lib.format",
                                   "numpy.linalg",
                                   "numpy.linalg._umath_linalg",
                                   "numpy.linalg.lapack_lite",
-                                  "scipy.io.matlab.streams",
                                   "scipy.integrate",
                                   "scipy.integrate.vode",
                                   #"scipy.sparse.linalg.dsolve.umfpack",
@@ -61,7 +72,8 @@ build_exe_options = {"excludes": ['tkinter','tk', '_tkagg', '_gtkagg', '_gtk', '
                                   'sklearn.utils.weight_vector',
                                   'pyqtgraph.graphicsItems.GraphItem',
                                   "sys",
-                                  "acousticsim"]}
+                                  "acousticsim",
+                                  "networkx"]}
 
 msi_data = {"Shortcut": shortcut_table}
 
@@ -70,6 +82,10 @@ bdist_msi_options = {
         'add_to_path': False,
         'initial_target_dir': r'[ProgramFiles64Folder]\%s\%s' % (group_name, exe_name),
         'data':msi_data}
+
+bdist_mac_options = {'bundle_name':exe_name}
+
+bdist_dmg_options = {'applications_shortcut':True}
 
 base = None
 #if sys.platform == "win32":
@@ -101,5 +117,7 @@ setup(name='Exemplar Network Explorer',
                             )],
       options={
           'bdist_msi': bdist_msi_options,
-          'build_exe': build_exe_options}
+          'build_exe': build_exe_options,
+          'bdist_mac': bdist_mac_options,
+          'bdist_dmg':bdist_dmg_options}
       )
