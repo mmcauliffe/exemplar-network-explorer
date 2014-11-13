@@ -1,13 +1,16 @@
 
 
 import sys
+import scipy.special
 import os
-from site import getsitepackages
 from cx_Freeze import setup, Executable
 
 def readme():
     with open('README.md') as f:
         return f.read()
+
+ufuncs_path = scipy.special._ufuncs.__file__
+incl_files = [(ufuncs_path,os.path.split(ufuncs_path)[1])]
 
 group_name = 'ENE'
 
@@ -37,18 +40,7 @@ build_exe_options = {"excludes": ['tkinter',
                                 'tcl',
                                 'matplotlib'
                                 ],
-                    #"include_files": [(os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csr.pyd'),'_csr.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csc.pyd'),'_csc.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_coo.pyd'),'_coo.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_dia.pyd'),'_dia.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_bsr.pyd'),'_bsr.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'scipy/sparse/sparsetools/_csgraph.pyd'),'_csgraph.pyd'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libifcoremd.dll'),'libifcoremd.dll'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libifportmd.dll'),'libifportmd.dll'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libiompstubs5md.dll'),'libiompstubs5md.dll'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/libmmd.dll'),'libmmd.dll'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/svml_dispmd.dll'),'svml_dispmd.dll'),
-                    #                    (os.path.join(getsitepackages()[1],'numpy/core/tbb.dll'),'tbb.dll')],
+                    "include_files": incl_files,
                     "includes": [
                                   "PySide",
                                   "atexit",
@@ -83,7 +75,8 @@ bdist_msi_options = {
         'initial_target_dir': r'[ProgramFiles64Folder]\%s\%s' % (group_name, exe_name),
         'data':msi_data}
 
-bdist_mac_options = {'bundle_name':exe_name}
+bdist_mac_options = {'bundle_name':exe_name,
+                     'qt_menu_nib':'/usr/local/Cellar/qt5/5.3.2/plugins/platforms',}
 
 bdist_dmg_options = {'applications_shortcut':True}
 
